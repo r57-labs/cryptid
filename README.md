@@ -19,7 +19,7 @@ python cryptid.py list-algorithms
 # Generate test vectors
 python cryptid.py generate -a sha256 -n 100000 -o vectors.jsonl
 
-# Compare two implementations
+# Compare two implementations (uses statistical suite)
 python cryptid.py compare --target device_output.jsonl --reference openssl_output.jsonl
 ```
 
@@ -52,7 +52,7 @@ The toolkit runs up to 13 independent tests across four analysis tiers:
 
 **Built-in algorithms**: Use `-a <name>` to test any of the 24 built-in hash functions.
 
-**External command**: Use `--command "your_hash_tool"` to test any external implementation.
+**External command**: Use `--command "your_hash_tool"` to test any external implementation. The command receives one hex-encoded input on stdin and should output the hex-encoded hash on stdout.
 
 ## Exit Codes
 
@@ -93,7 +93,9 @@ src/                 Analysis modules
 models/              Trained models
   meta_learner_v3_scale_invariant.json   Scale-invariant classifier (23 features)
 
-whitepaper.py        PDF generation for the accompanying paper
+experiments/         Research and development scripts
+  bit_probe.py, byte_model.py, hybrid_model.py, etc.
+
 whitepaper.pdf       The paper itself
 ```
 
@@ -103,8 +105,9 @@ Python 3.10+ with standard library only for core functionality. Optional depende
 
 ```bash
 pip install cryptography   # For AES, ChaCha20, SM4, Camellia tests
-pip install gmssl          # For SM3 tests
 ```
+
+SM3 support uses `hashlib.new("sm3")`, which requires Python built against OpenSSL 3.0+.
 
 ## Key Findings
 
@@ -112,7 +115,7 @@ The research behind this toolkit produced several notable results:
 
 - **Jenkins OAT**: Passes all aggregate statistical tests but exhibits clear differential structure (single-bit deviation from ideal) and high sequence autocorrelation. This appears to be a previously undocumented formalization of the weakness.
 - **CRC32**: Invisible to the statistical suite but immediately caught by the differential profile, confirming the value of multi-method testing.
-- **SHA-3 diffusion**: Achieves full internal state diffusion in 3 of 24 rounds, compared to SHA-256's ~12 rounds, consistent with Keccak's design goals.
+- **SHA-3 diffusion**: Achieves full internal state diffusion in 3 of 24 rounds, compared to SHA-256's 16 rounds to 90% diffusion, consistent with Keccak's design goals.
 
 ## Limitations
 

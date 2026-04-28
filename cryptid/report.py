@@ -149,20 +149,24 @@ def print_statistical_results(result) -> None:
             print(f"    {display:<25} {indicator:<14} (signal: {sig_str})")
 
     if result.meta_learner:
-        prob = result.meta_learner.get("probability", 0)
-        label = result.meta_learner.get("predicted_label", "?")
-        threshold = result.meta_learner.get("threshold", 0.4)
-
         print()
-        p_str = f"{prob:.3f}"
-        if label == "weakened":
-            p_colored = Colors.red(p_str)
-        elif prob >= threshold * 0.8:
-            p_colored = Colors.yellow(p_str)
+        if result.meta_learner.get("skipped"):
+            reason = result.meta_learner.get("reason", "insufficient samples")
+            print(f"    {'Meta-learner':<25} {Colors.dim(f'skipped — {reason}')}")
         else:
-            p_colored = Colors.green(p_str)
+            prob = result.meta_learner.get("probability", 0)
+            label = result.meta_learner.get("predicted_label", "?")
+            threshold = result.meta_learner.get("threshold", 0.4)
 
-        print(f"    {'Meta-learner':<25} P(weakened) = {p_colored}")
+            p_str = f"{prob:.3f}"
+            if label == "weakened":
+                p_colored = Colors.red(p_str)
+            elif prob >= threshold * 0.8:
+                p_colored = Colors.yellow(p_str)
+            else:
+                p_colored = Colors.green(p_str)
+
+            print(f"    {'Meta-learner':<25} P(weakened) = {p_colored}")
 
     elapsed = result.timings.get("statistical", 0)
     if elapsed:

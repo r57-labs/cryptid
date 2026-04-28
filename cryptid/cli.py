@@ -130,9 +130,9 @@ def cmd_test(args):
     hash_fn = None
     name = "unknown"
 
-    # Sample size warning
+    # Sample size guidance
     if args.samples and args.samples < 2000 and verbose:
-        print(f"  Warning: {args.samples} samples is low. Recommend 5000+ for reliable results.")
+        print(f"  Note: {args.samples} samples — meta-learner requires 2000+ and will be skipped.")
 
     # Determine input source
     if args.input:

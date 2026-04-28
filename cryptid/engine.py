@@ -20,6 +20,11 @@ _src_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "src")
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
+# Minimum sample count for the meta-learner to produce reliable predictions.
+# Below this threshold, the classifier is skipped entirely — too few samples
+# cause feature instability that leads to false positives.
+META_LEARNER_MIN_SAMPLES = 2000
+
 
 def _load_meta_learner(model_path: str) -> dict:
     """Load the trained meta-learner model."""
@@ -175,8 +180,8 @@ class AuditResult:
 
         signals = []
 
-        # Meta-learner is the primary classifier
-        if self.meta_learner:
+        # Meta-learner is the primary classifier (skip if it was gated)
+        if self.meta_learner and not self.meta_learner.get("skipped"):
             prob = self.meta_learner.get("probability", 0)
             if prob >= 0.7:
                 signals.append(("meta_learner", "FAIL", prob))
@@ -216,7 +221,7 @@ class AuditResult:
     def signal_sources(self) -> list[str]:
         """List which test batteries detected anomalies."""
         sources = []
-        if self.meta_learner and self.meta_learner.get("probability", 0) >= 0.4:
+        if self.meta_learner and not self.meta_learner.get("skipped") and self.meta_learner.get("probability", 0) >= 0.4:
             sources.append("statistical")
         if self.differential and self.differential.get("any_signal"):
             sources.append("differential")
@@ -335,22 +340,31 @@ def run_audit(
                 print(f"  ERROR: {e}", file=sys.stderr)
         result.timings["statistical"] = time.time() - t0
 
-        # Meta-learner classification
+        # Meta-learner classification (requires minimum sample count)
         if result.stats:
-            if model_path is None:
-                model_path = _find_default_model()
-            if model_path:
-                try:
-                    model = _load_meta_learner(model_path)
-                    result.meta_learner = run_meta_learner(result.stats, model, verbose=verbose)
-                    if verbose:
-                        prob = result.meta_learner.get("probability", 0)
-                        label = result.meta_learner.get("predicted_label", "?")
-                        print(f"\n  Meta-learner: P(weakened) = {prob:.3f} → {label}")
-                except Exception as e:
-                    result.errors.append(f"Meta-learner error: {e}")
+            if result.n_samples < META_LEARNER_MIN_SAMPLES:
+                if verbose:
+                    print(f"\n  Meta-learner: skipped ({result.n_samples:,} samples < "
+                          f"{META_LEARNER_MIN_SAMPLES:,} minimum)")
+                result.meta_learner = {
+                    "skipped": True,
+                    "reason": f"insufficient samples ({result.n_samples} < {META_LEARNER_MIN_SAMPLES})",
+                }
             else:
-                result.errors.append("No meta-learner model found")
+                if model_path is None:
+                    model_path = _find_default_model()
+                if model_path:
+                    try:
+                        model = _load_meta_learner(model_path)
+                        result.meta_learner = run_meta_learner(result.stats, model, verbose=verbose)
+                        if verbose:
+                            prob = result.meta_learner.get("probability", 0)
+                            label = result.meta_learner.get("predicted_label", "?")
+                            print(f"\n  Meta-learner: P(weakened) = {prob:.3f} → {label}")
+                    except Exception as e:
+                        result.errors.append(f"Meta-learner error: {e}")
+                else:
+                    result.errors.append("No meta-learner model found")
 
     if level == "quick":
         return result

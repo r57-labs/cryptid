@@ -65,6 +65,17 @@ def load_hex_pairs(filepath: str) -> list[dict]:
     return records
 
 
+def _parse_hash_output(raw: str) -> str:
+    """Normalize a single hash output line.
+
+    Handles common formats like "(stdin)= abc123..." or "SHA256(stdin)= abc123...".
+    """
+    out = raw.strip()
+    if "=" in out:
+        out = out.split("=")[-1].strip()
+    return out
+
+
 def generate_from_command(
     command: str,
     n_samples: int = 10000,
@@ -73,10 +84,14 @@ def generate_from_command(
 ) -> list[dict]:
     """Generate test data by invoking a shell command.
 
-    The command receives hex-encoded random input on stdin (one per line)
-    and should output the corresponding hex-encoded hash (one per line).
+    The command receives hex-encoded random input on stdin and should output
+    the corresponding hex-encoded hash on stdout. Each input is sent as a
+    separate invocation to ensure compatibility with standard tools like
+    OpenSSL that don't natively process line-separated streams.
 
-    Example command: "openssl dgst -sha256 -hex"
+    Example commands:
+      "openssl dgst -sha256 -hex"
+      "./my_hash_tool"
     """
     rng = random.Random(42)
     inputs = []
@@ -85,8 +100,54 @@ def generate_from_command(
         inputs.append(data.hex())
 
     if verbose:
-        print(f"  Generating {n_samples} samples via command: {command}")
+        print(f"  Generating {n_samples:,} samples via command: {command}")
 
+    # First, try batch mode (all inputs at once) — this is much faster for
+    # tools that support line-separated streaming.
+    records = _try_batch_command(command, inputs)
+    if records is not None:
+        if verbose:
+            print(f"  Batch mode succeeded ({n_samples:,} samples)")
+        return records
+
+    # Fall back to per-input invocation — slower but works with any command.
+    if verbose:
+        print(f"  Batch mode failed, falling back to per-input invocation...")
+
+    records = []
+    for i, inp in enumerate(inputs):
+        if verbose and (i + 1) % 1000 == 0:
+            print(f"    {i + 1:,}/{n_samples:,}...")
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                input=inp + "\n",
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Command timed out on input {i + 1}: {command}")
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Command failed on input {i + 1} (exit {result.returncode}): "
+                f"{result.stderr[:200]}"
+            )
+
+        out = _parse_hash_output(result.stdout)
+        if not out:
+            raise RuntimeError(f"Command produced empty output for input {i + 1}")
+
+        records.append({"plaintext": inp, "hash": out})
+
+    return records
+
+
+def _try_batch_command(command: str, inputs: list[str]) -> Optional[list[dict]]:
+    """Try sending all inputs at once. Returns records or None if it fails."""
     input_text = "\n".join(inputs) + "\n"
 
     try:
@@ -99,24 +160,19 @@ def generate_from_command(
             timeout=300,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"Command timed out after 300s: {command}")
+        return None
 
     if result.returncode != 0:
-        raise RuntimeError(f"Command failed (exit {result.returncode}): {result.stderr[:500]}")
+        return None
 
     outputs = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
 
     if len(outputs) != len(inputs):
-        raise RuntimeError(
-            f"Command produced {len(outputs)} outputs for {len(inputs)} inputs. "
-            f"Expected 1:1 correspondence."
-        )
+        return None
 
     records = []
-    for inp, out in zip(inputs, outputs):
-        # Handle common output formats like "(stdin)= abc123..."
-        if "=" in out:
-            out = out.split("=")[-1].strip()
+    for inp, raw_out in zip(inputs, outputs):
+        out = _parse_hash_output(raw_out)
         records.append({"plaintext": inp, "hash": out})
 
     return records
