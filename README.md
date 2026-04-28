@@ -10,8 +10,8 @@ Accompanies the whitepaper: *Empirical Detection of Statistical Weaknesses in Cr
 # Test a built-in algorithm
 python cryptid.py test -a sha256 -n 10000 --level full
 
-# Test your own input/output pairs
-python cryptid.py test -i my_hashes.jsonl --level standard
+# Test your own input/output pairs (statistical suite only — see note below)
+python cryptid.py test -i my_hashes.jsonl
 
 # List available built-in algorithms
 python cryptid.py list-algorithms
@@ -50,9 +50,11 @@ The toolkit runs up to 13 independent tests across four analysis tiers:
 {"plaintext": "hello world", "hash": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"}
 ```
 
+Note: file-based input (`-i`) only runs the statistical suite, since differential and extended tests require a callable hash function. For full analysis, use `-a` or `--command`.
+
 **Built-in algorithms**: Use `-a <name>` to test any of the 24 built-in hash functions.
 
-**External command**: Use `--command "your_hash_tool"` to test any external implementation. The command receives one hex-encoded input on stdin and should output the hex-encoded hash on stdout.
+**External command**: Use `--command "your_hash_tool"` to test any external implementation. The command receives one hex-encoded input on stdin and should output the hex-encoded hash on stdout. Each input is hashed via a separate invocation, so performance is slower than built-in algorithms — `-n 2000 --level quick` is a good starting point.
 
 ## Exit Codes
 
