@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (too large for git — regenerate with the toolkit)
+data/
+*.jsonl
+
+# Task management
+.task-result
+
+# Working directory (development artifacts)
+.pending/
+
+# Session state
+CHANGELOG.md
+STATE.md
+
+# PDF build script (not part of the toolkit)
+whitepaper.py
+
+# Temporary files
+*.tmp
+*.bak
+
+# Uploads
+uploads/

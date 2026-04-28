@@ -1,0 +1,128 @@
+# cryptid
+
+Black-box cryptographic hash assessment toolkit. Empirically tests whether a hash function implementation behaves as a random oracle, using a layered battery of statistical, differential, and structural analyses.
+
+Accompanies the whitepaper: *Empirical Detection of Statistical Weaknesses in Cryptographic Hash Functions*.
+
+## Quick Start
+
+```bash
+# Test a built-in algorithm
+python cryptid.py test -a sha256 -n 10000 --level full
+
+# Test your own input/output pairs
+python cryptid.py test -i my_hashes.jsonl --level standard
+
+# List available built-in algorithms
+python cryptid.py list-algorithms
+
+# Generate test vectors
+python cryptid.py generate -a sha256 -n 100000 -o vectors.jsonl
+
+# Compare two implementations
+python cryptid.py compare --target device_output.jsonl --reference openssl_output.jsonl
+```
+
+## What It Does
+
+The toolkit runs up to 13 independent tests across four analysis tiers:
+
+**Statistical Suite** (6 tests) — Aggregate tests on input/output pairs: bit correlation, output entropy, avalanche effect, byte frequency, mutual information, and multi-byte interaction. A trained meta-learner classifier combines these into a single probability score.
+
+**Differential Profile** (4 tests) — Tests how output changes when input changes in controlled ways: single-bit differential matrix, byte-level differential, Hamming distance distribution, and differential bit independence.
+
+**Extended Analysis** (3 tests) — Near-collision frequency, output sequence correlation (counter-mode), and cycle/fixed-point detection.
+
+**Linear Approximation** — Tests whether any multi-bit XOR combination of input bits correlates with any combination of output bits, at 6 levels of mask complexity.
+
+## Test Levels
+
+| Level | Tests | Time (10K samples) | Use case |
+|-------|-------|-------------------|----------|
+| `quick` | Statistical suite + meta-learner | ~5s | Fast screening |
+| `standard` | + Differential profile | ~10s | Default, good coverage |
+| `full` | + Extended + Linear | ~40s | Comprehensive audit |
+
+## Input Formats
+
+**JSONL** (recommended): One JSON object per line with `plaintext` and `hash` fields:
+```json
+{"plaintext": "hello world", "hash": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"}
+```
+
+**Built-in algorithms**: Use `-a <name>` to test any of the 24 built-in hash functions.
+
+**External command**: Use `--command "your_hash_tool"` to test any external implementation.
+
+## Exit Codes
+
+| Code | Verdict | Meaning |
+|------|---------|---------|
+| 0 | PASS | No anomalies detected |
+| 1 | WARN | Potential anomalies in one test battery |
+| 2 | FAIL | Clear anomalies detected |
+| 3 | ERROR | Analysis could not complete |
+
+## Supported Algorithms (built-in)
+
+**Cryptographic**: SHA-256, SHA-512, SHA-1, SHA-224, SHA-512/256, SHA-3-256, SHA-3-512, BLAKE2b, BLAKE2s, MD5, SM3
+
+**Block cipher constructions**: AES-128 (CBC-MAC), ChaCha20 (PRF), SM4 (CBC-MAC), Camellia-128 (CBC-MAC)
+
+**Non-cryptographic**: CRC32, Adler32, FNV-1a (32/64), MurmurHash3, SipHash-2-4, DJB2, Jenkins OAT, Pearson
+
+## Project Structure
+
+```
+cryptid/          CLI tool
+  cli.py             Entry point and argument parsing
+  engine.py          Test orchestration and result aggregation
+  input_handler.py   JSONL, hex-pair, and command-mode input parsing
+  report.py          Terminal and JSON output formatting
+
+src/                 Analysis modules
+  statistical_analysis.py   6-test statistical suite
+  meta_learner.py           Trained logistic regression classifier
+  differential_profile.py   4-test differential analysis
+  extended_analysis.py      Near-collision, sequence, cycle tests
+  linear_approximation.py   Multi-bit linear bias testing
+  internal_diffusion.py     White-box round-by-round diffusion
+  generate_dataset.py       Hash function implementations + data generation
+  synthetic_weakness.py     Calibration weakness generator
+
+models/              Trained models
+  meta_learner_v3_scale_invariant.json   Scale-invariant classifier (23 features)
+
+whitepaper.py        PDF generation for the accompanying paper
+whitepaper.pdf       The paper itself
+```
+
+## Requirements
+
+Python 3.10+ with standard library only for core functionality. Optional dependencies:
+
+```bash
+pip install cryptography   # For AES, ChaCha20, SM4, Camellia tests
+pip install gmssl          # For SM3 tests
+```
+
+## Key Findings
+
+The research behind this toolkit produced several notable results:
+
+- **Jenkins OAT**: Passes all aggregate statistical tests but exhibits clear differential structure (single-bit deviation from ideal) and high sequence autocorrelation. This appears to be a previously undocumented formalization of the weakness.
+- **CRC32**: Invisible to the statistical suite but immediately caught by the differential profile, confirming the value of multi-method testing.
+- **SHA-3 diffusion**: Achieves full internal state diffusion in 3 of 24 rounds, compared to SHA-256's ~12 rounds, consistent with Keccak's design goals.
+
+## Limitations
+
+This toolkit detects *statistical* weaknesses — deviations from random oracle behavior. It cannot detect:
+- Kleptographic backdoors (output is statistically perfect but contains a hidden trapdoor)
+- Reduced keyspace attacks
+- Algebraic weaknesses that don't manifest in input/output statistics
+
+See Section 5 of the whitepaper for the full threat model discussion.
+
+## License
+
+MIT
