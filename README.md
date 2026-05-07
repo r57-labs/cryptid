@@ -56,6 +56,82 @@ Note: file-based input (`-i`) only runs the statistical suite, since differentia
 
 **External command**: Use `--command "your_hash_tool"` to test any external implementation. The command receives one hex-encoded input on stdin and should output the hex-encoded hash on stdout. Each input is hashed via a separate invocation, so performance is slower than built-in algorithms — `-n 2000 --level quick` is a good starting point.
 
+## Writing a Wrapper for External Implementations
+
+`cryptid` can test any hash implementation — a third-party library, a hardware device, firmware, or a custom binary — as long as you write a thin wrapper that bridges it to the JSONL format.
+
+### The data contract
+
+`cryptid generate` produces a JSONL file where each line is:
+
+```json
+{"plaintext": "someAsciiString", "hash": "a3f9...hex..."}
+```
+
+The `plaintext` value is a variable-length ASCII string. Your wrapper reads these records, feeds the plaintext to your implementation, and writes back JSONL in the same format with your implementation's hash replacing the original.
+
+### Minimal wrapper template
+
+```python
+# wrapper.py — replace YOUR_HASH_FUNCTION with your implementation
+import json, sys
+
+def your_hash_function(plaintext_bytes: bytes) -> str:
+    # Return a fixed-length lowercase hex string
+    # e.g. for a 128-bit hash: return format(result, "032x")
+    raise NotImplementedError
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    record = json.loads(line)
+    pt = record["plaintext"]
+    h = your_hash_function(pt.encode("utf-8"))
+    print(json.dumps({"plaintext": pt, "hash": h}))
+```
+
+### Worked example: MurmurHash3 (mmh3)
+
+```bash
+pip install mmh3
+```
+
+```python
+# mmh3_wrapper.py
+import mmh3, json, sys
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    record = json.loads(line)
+    pt = record["plaintext"]
+    h = format(mmh3.hash128(pt.encode("utf-8")) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF, "032x")
+    print(json.dumps({"plaintext": pt, "hash": h}))
+```
+
+```bash
+python cryptid.py generate -a sha256 -n 5000 -o inputs.jsonl
+python mmh3_wrapper.py < inputs.jsonl > mmh3_output.jsonl
+python cryptid.py test -i mmh3_output.jsonl --level quick
+```
+
+Expected output: `Verdict: PASS` — MurmurHash3 has strong statistical properties and passes all tests at `--level quick`.
+
+### A note on output width
+
+Pad your hex output to a consistent length matching your hash's bit width:
+
+| Hash width | Format string |
+|---|---|
+| 32-bit  | `format(result, "08x")` |
+| 64-bit  | `format(result, "016x")` |
+| 128-bit | `format(result, "032x")` |
+| 256-bit | `format(result, "064x")` |
+
+Inconsistent output lengths will cause the loader to reject the file.
+
 ## Exit Codes
 
 | Code | Verdict | Meaning |
