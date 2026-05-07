@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cryptid — Black-Box Cryptographic Hash Assessment Toolkit</title>
+  <meta name="description" content="An open-source toolkit for empirically detecting statistical weaknesses in cryptographic hash functions. Built by R57 Labs using AI-native development methodology." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Animated background canvas -->
+  <canvas id="bg-canvas"></canvas>
+
+  <!-- ═══════════════════════════════════════════
+       NAV
+  ═══════════════════════════════════════════ -->
+  <nav class="nav">
+    <a href="https://r57labs.com/" target="_blank" class="nav-logo">
+      <img src="assets/r57labs_logo.png" alt="R57 Labs" class="nav-logo-img" />
+    </a>
+    <div class="nav-links">
+      <a href="#how-it-works">How It Works</a>
+      <a href="#findings">Findings</a>
+      <a href="#real-hardware">Hardware</a>
+      <a href="#ai-native">AI Native</a>
+      <a href="https://github.com/r57-labs/cryptid" target="_blank" class="nav-cta">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════
+       HERO
+  ═══════════════════════════════════════════ -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        Open Source · MIT License · R57 Labs
+      </div>
+      <h1 class="hero-title">
+        <span class="mono-accent">cryptid</span>
+      </h1>
+      <p class="hero-subtitle">
+        Black-box cryptographic hash assessment toolkit.<br />
+        Empirically detect statistical weaknesses in hash functions — no math degree required.
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/r57-labs/cryptid" target="_blank" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+        <a href="assets/whitepaper.pdf" target="_blank" class="btn btn-secondary">
+          Read the Whitepaper
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+      </div>
+      <div class="hero-terminal">
+        <div class="terminal-bar">
+          <span class="t-dot t-red"></span>
+          <span class="t-dot t-yellow"></span>
+          <span class="t-dot t-green"></span>
+          <span class="t-title">cryptid — bash</span>
+        </div>
+        <div class="terminal-body">
+          <div class="t-line"><span class="t-prompt">$</span> python cryptid.py test -a jenkins -n 5000 --level standard</div>
+          <div class="t-line t-dim">  Generating 5,000 test vectors...</div>
+          <div class="t-line t-dim">  Phase 1: Statistical Suite</div>
+          <div class="t-line t-dim">  ────────────────────────────────────────</div>
+          <div class="t-line">  Bit correlation &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-pass">clean (signal: 0.000)</span></div>
+          <div class="t-line">  Output entropy &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-pass">clean (signal: 0.000)</span></div>
+          <div class="t-line">  Avalanche effect &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-pass">clean (signal: 0.000)</span></div>
+          <div class="t-line">  Meta-learner &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="t-pass">P(weakened) = 0.171</span></div>
+          <div class="t-line t-dim">  Phase 2: Differential Profile</div>
+          <div class="t-line t-dim">  ────────────────────────────────────────</div>
+          <div class="t-line">  Single-bit differential &nbsp;&nbsp;&nbsp;<span class="t-warn">SIGNAL (signal: 1.000)</span></div>
+          <div class="t-line t-dim">  ────────────────────────────────────────</div>
+          <div class="t-line"><span class="t-verdict-warn">  Verdict: WARN  —  Potential anomalies in: differential</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       STATS BAR
+  ═══════════════════════════════════════════ -->
+  <section class="stats-bar">
+    <div class="stat-item">
+      <span class="stat-num">24</span>
+      <span class="stat-label">Algorithms Tested</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-num">7</span>
+      <span class="stat-label">Detection Methods</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-num">93%</span>
+      <span class="stat-label">Detection Accuracy</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-num">0</span>
+      <span class="stat-label">False Positives on Crypto</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-num">&lt;5s</span>
+      <span class="stat-label">Quick Scan Time</span>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       WHAT IS IT
+  ═══════════════════════════════════════════ -->
+  <section class="section" id="what-is-it">
+    <div class="container">
+      <div class="section-label">THE PROBLEM</div>
+      <h2 class="section-title">How do you know a hash function does what it claims?</h2>
+      <div class="two-col">
+        <div class="col-text">
+          <p>In 2013, documents revealed that the NSA had inserted a kleptographic backdoor into the Dual EC DRBG random number generator — a NIST standard. Before that, the CIA operated compromised Crypto AG cipher machines for decades. History demonstrates that cryptographic standards can be deliberately weakened, and that such weaknesses may go undetected for years.</p>
+          <p>If a hardware security module, a firmware update, or a third-party library implements SHA-256, how do you verify the implementation is faithful? Mathematical proofs are inaccessible to most engineers. Existing test suites check output randomness but miss structural weaknesses that only appear when you look at <em>how the output changes</em> — not just what it looks like.</p>
+          <p><strong>cryptid</strong> treats hash functions as black boxes and applies seven independent statistical and differential tests to detect anomalies that no single method would catch alone.</p>
+        </div>
+        <div class="col-cards">
+          <div class="threat-card">
+            <div class="threat-icon">🔍</div>
+            <div class="threat-name">Statistical Bias</div>
+            <div class="threat-status detectable">Detectable</div>
+          </div>
+          <div class="threat-card">
+            <div class="threat-icon">↔️</div>
+            <div class="threat-name">Weak Differential Structure</div>
+            <div class="threat-status detectable">Detectable</div>
+          </div>
+          <div class="threat-card">
+            <div class="threat-icon">🔗</div>
+            <div class="threat-name">Slow Internal Diffusion</div>
+            <div class="threat-status detectable">Detectable</div>
+          </div>
+          <div class="threat-card">
+            <div class="threat-icon">🚪</div>
+            <div class="threat-name">Kleptographic Backdoor</div>
+            <div class="threat-status not-detectable">Out of Scope</div>
+          </div>
+          <div class="threat-card">
+            <div class="threat-icon">🔑</div>
+            <div class="threat-name">Reduced Keyspace</div>
+            <div class="threat-status not-detectable">Out of Scope</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       HOW IT WORKS
+  ═══════════════════════════════════════════ -->
+  <section class="section section-dark" id="how-it-works">
+    <div class="container">
+      <div class="section-label">METHODOLOGY</div>
+      <h2 class="section-title">Seven tests. Three tiers. One verdict.</h2>
+      <p class="section-intro">No single statistical test catches all weakness types. cryptid runs a layered battery — weaknesses invisible to aggregate analysis are caught by differential tests, and weaknesses invisible to both are caught by linear approximation.</p>
+
+      <div class="tiers">
+        <div class="tier">
+          <div class="tier-header">
+            <span class="tier-num">01</span>
+            <div>
+              <div class="tier-name">Statistical Suite</div>
+              <div class="tier-sub">6 tests · aggregate output analysis</div>
+            </div>
+          </div>
+          <div class="tier-tests">
+            <span class="test-tag">Bit Correlation</span>
+            <span class="test-tag">Output Entropy</span>
+            <span class="test-tag">Avalanche Effect</span>
+            <span class="test-tag">Byte Frequency</span>
+            <span class="test-tag">Mutual Information</span>
+            <span class="test-tag">Multi-byte Interaction</span>
+          </div>
+          <p class="tier-desc">Asks: <em>"Does the output look random?"</em> A trained logistic regression meta-classifier combines all six signals into a single probability score. Trained on 288 synthetic variants, achieving 93% detection accuracy with zero false positives on real cryptographic primitives.</p>
+        </div>
+
+        <div class="tier-connector">
+          <div class="connector-line"></div>
+          <span class="connector-label">+ standard</span>
+        </div>
+
+        <div class="tier">
+          <div class="tier-header">
+            <span class="tier-num">02</span>
+            <div>
+              <div class="tier-name">Differential Profile</div>
+              <div class="tier-sub">4 tests · how output changes</div>
+            </div>
+          </div>
+          <div class="tier-tests">
+            <span class="test-tag">Single-bit Differential Matrix</span>
+            <span class="test-tag">Byte-level Differential</span>
+            <span class="test-tag">Hamming Distance Profile</span>
+            <span class="test-tag">Differential Bit Independence</span>
+          </div>
+          <p class="tier-desc">Asks: <em>"Does the output <strong>change</strong> randomly?"</em> Empirical implementation of the Strict Avalanche Criterion and Bit Independence Criterion. Catches CRC32 and Jenkins OAT — both of which pass all aggregate statistical tests.</p>
+        </div>
+
+        <div class="tier-connector">
+          <div class="connector-line"></div>
+          <span class="connector-label">+ full</span>
+        </div>
+
+        <div class="tier">
+          <div class="tier-header">
+            <span class="tier-num">03</span>
+            <div>
+              <div class="tier-name">Extended + Linear</div>
+              <div class="tier-sub">3 + 6-level tests · structural analysis</div>
+            </div>
+          </div>
+          <div class="tier-tests">
+            <span class="test-tag">Near-collision Frequency</span>
+            <span class="test-tag">Sequence Correlation</span>
+            <span class="test-tag">Cycle Detection</span>
+            <span class="test-tag">Linear Approximation (6 levels)</span>
+          </div>
+          <p class="tier-desc">Asks: <em>"Is there any exploitable algebraic or structural pattern?"</em> Inspired by Matsui's linear cryptanalysis. Tests whether any multi-bit XOR combination of input bits correlates with output bits at six levels of mask complexity.</p>
+        </div>
+      </div>
+
+      <div class="level-table-wrap">
+        <table class="level-table">
+          <thead>
+            <tr>
+              <th>Level</th>
+              <th>Tests Run</th>
+              <th>Approx. Time (5K samples)</th>
+              <th>Best For</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="level-badge quick">quick</span></td>
+              <td>Statistical suite + meta-learner</td>
+              <td>~5s</td>
+              <td>CI/CD pipeline, every commit</td>
+            </tr>
+            <tr>
+              <td><span class="level-badge standard">standard</span></td>
+              <td>+ Differential profile</td>
+              <td>~10s</td>
+              <td>Default — good coverage for most audits</td>
+            </tr>
+            <tr>
+              <td><span class="level-badge full">full</span></td>
+              <td>+ Extended + Linear approximation</td>
+              <td>~40s</td>
+              <td>Release gate, comprehensive audit</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       KEY FINDINGS
+  ═══════════════════════════════════════════ -->
+  <section class="section" id="findings">
+    <div class="container">
+      <div class="section-label">KEY FINDINGS</div>
+      <h2 class="section-title">What 24 algorithms revealed</h2>
+      <p class="section-intro">All 15 cryptographic algorithms tested — including SHA-256, AES-128, SM3, BLAKE2b, and ChaCha20 — produced output statistically indistinguishable from a perfect random oracle at 100,000 samples. The non-cryptographic hashes told a different story.</p>
+
+      <div class="findings-grid">
+
+        <div class="finding-card finding-highlight">
+          <div class="finding-tag">CASE STUDY</div>
+          <h3>Jenkins OAT: The Hidden Weakness</h3>
+          <p>Jenkins one-at-a-time is widely used in hash tables. It passes every aggregate statistical test — bit correlation, entropy, avalanche, frequency, mutual information. The meta-learner classifies it as clean (P = 0.15). But differential profile analysis tells a different story.</p>
+          <p>Its single-bit differential matrix shows significant non-uniformity (signal strength: 1.000), and sequential outputs exhibit high autocorrelation. The structural reason: Jenkins' shift-and-add construction has no final mixing pass, creating position-dependent differential structure in the last input bytes.</p>
+          <div class="finding-verdict">
+            <span class="verdict-pass">Statistical Suite: PASS</span>
+            <span class="verdict-warn">Differential Profile: WARN</span>
+          </div>
+        </div>
+
+        <div class="finding-card">
+          <div class="finding-tag">VALIDATION</div>
+          <h3>CRC32: Algebraic, Not Statistical</h3>
+          <p>CRC32's XOR-linearity is algebraic — not statistical. The aggregate suite classifies it as clean (P = 0.11). But differential and sequence correlation tests detect it immediately, confirming that different methods catch different categories of weakness.</p>
+          <div class="finding-verdict">
+            <span class="verdict-pass">Statistical Suite: PASS</span>
+            <span class="verdict-fail">Differential: FAIL</span>
+          </div>
+        </div>
+
+        <div class="finding-card">
+          <div class="finding-tag">WHITE-BOX</div>
+          <h3>SHA-3 vs. SHA-1: Diffusion Rates</h3>
+          <p>SHA-3's sponge construction achieves full 1600-bit state diffusion in just 3 of 24 rounds. SHA-1 requires 20 of 80 rounds to reach 90% diffusion. SM3 achieves nearly double SHA-256's early-round diffusion rate — a deliberate design choice by its authors.</p>
+          <div class="finding-verdict">
+            <span class="verdict-pass">SHA-3: 3 rounds to full diffusion</span>
+            <span class="verdict-warn">SHA-1: 20 rounds to 90%</span>
+          </div>
+        </div>
+
+        <div class="finding-card">
+          <div class="finding-tag">POSITIVE RESULT</div>
+          <h3>MurmurHash3 &amp; SipHash: Clean</h3>
+          <p>Neither claims cryptographic security, yet both are completely clean across all seven detection methods — indistinguishable from random oracle controls. Statistical quality is a design choice, not an inherent property of complexity.</p>
+          <div class="finding-verdict">
+            <span class="verdict-pass">All 7 methods: PASS</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Visualizations -->
+      <div class="viz-section">
+        <h3 class="viz-title">Independent Verification</h3>
+        <p class="viz-desc">These visualizations were generated by independently re-implementing the paper's core methodology — not by running the tool itself. The results confirm the paper's findings from scratch.</p>
+        <div class="viz-grid">
+          <div class="viz-item" onclick="openLightbox('assets/pressure_test_results.png', 'Detection signal strength across algorithms — aggregate vs. differential methods')">
+            <img src="assets/pressure_test_results.png" alt="Detection signal strength across algorithms" class="viz-img" />
+            <div class="viz-caption">
+              Detection signal strength across algorithms — aggregate vs. differential methods
+              <span class="viz-expand">&#x26F6; click to expand</span>
+            </div>
+          </div>
+          <div class="viz-item" onclick="openLightbox('assets/differential_matrix_heatmaps.png', 'Single-bit differential matrices: SHA-256 (uniform) vs. Jenkins OAT (non-uniform)')">
+            <img src="assets/differential_matrix_heatmaps.png" alt="Differential matrix heatmaps" class="viz-img" />
+            <div class="viz-caption">
+              Single-bit differential matrices: SHA-256 (uniform) vs. Jenkins OAT (non-uniform)
+              <span class="viz-expand">&#x26F6; click to expand</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       INSTALL / QUICKSTART
+  ═══════════════════════════════════════════ -->
+  <section class="section section-dark" id="quickstart">
+    <div class="container">
+      <div class="section-label">GET STARTED</div>
+      <h2 class="section-title">Up and running in 30 seconds</h2>
+      <p class="section-intro">Pure Python standard library for core functionality. Optional dependencies only for block cipher tests.</p>
+
+      <div class="code-steps">
+        <div class="code-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-label">Clone the repo</div>
+            <div class="code-block">
+              <code>git clone https://github.com/r57-labs/cryptid.git &amp;&amp; cd cryptid</code>
+              <button class="copy-btn" data-copy="git clone https://github.com/r57-labs/cryptid.git && cd cryptid">copy</button>
+            </div>
+          </div>
+        </div>
+        <div class="code-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-label">Run a quick scan on a built-in algorithm</div>
+            <div class="code-block">
+              <code>python cryptid.py test -a sha256 -n 5000 --level quick</code>
+              <button class="copy-btn" data-copy="python cryptid.py test -a sha256 -n 5000 --level quick">copy</button>
+            </div>
+          </div>
+        </div>
+        <div class="code-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <div class="step-label">Test your own implementation (JSONL file)</div>
+            <div class="code-block">
+              <code>python cryptid.py test -i my_hashes.jsonl --level standard</code>
+              <button class="copy-btn" data-copy="python cryptid.py test -i my_hashes.jsonl --level standard">copy</button>
+            </div>
+          </div>
+        </div>
+        <div class="code-step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <div class="step-label">Test an external tool directly</div>
+            <div class="code-block">
+              <code>python cryptid.py test --command "openssl dgst -sha256 -hex" -n 2000 --level quick</code>
+              <button class="copy-btn" data-copy='python cryptid.py test --command "openssl dgst -sha256 -hex" -n 2000 --level quick'>copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-formats">
+        <h3>Input Format (JSONL)</h3>
+        <div class="code-block code-block-sm">
+          <code>{"plaintext": "hello world", "hash": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"}</code>
+        </div>
+        <p class="format-note">One JSON object per line. Supports <code>plaintext</code>, <code>input</code>, or <code>message</code> as the input field; <code>hash</code>, <code>output</code>, or <code>digest</code> as the output field.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       REAL HARDWARE SECTION
+  ═══════════════════════════════════════════ -->
+  <section class="section" id="real-hardware">
+    <div class="container">
+      <div class="section-label">REAL-WORLD TESTING</div>
+      <h2 class="section-title">Testing real hardware &amp; external implementations</h2>
+      <p class="section-intro">cryptid doesn't care how a hash was produced. Any implementation that can accept an input and return a hex digest can be tested — HSMs, firmware, vendor libraries, or custom hardware.</p>
+
+      <div class="hw-grid">
+
+        <div class="hw-card">
+          <div class="hw-card-header">
+            <span class="hw-icon">🔒</span>
+            <div>
+              <div class="hw-card-title">Hardware Security Module (HSM)</div>
+              <div class="hw-card-sub">PKCS#11 / vendor CLI</div>
+            </div>
+          </div>
+          <p class="hw-card-desc">Write a thin wrapper that calls your HSM's PKCS#11 interface or vendor CLI, then collect outputs into a JSONL file for batch testing.</p>
+          <div class="code-block code-block-sm">
+            <code><span class="t-dim"># wrapper.py — calls HSM via pkcs11 library</span><br>
+import pkcs11, json, sys<br>
+lib = pkcs11.lib('/usr/lib/libCryptoki2_64.so')<br>
+token = lib.get_token(token_label='MyHSM')<br>
+with token.open(user_pin='1234') as session:<br>
+&nbsp;&nbsp;for line in sys.stdin:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;plaintext = bytes.fromhex(line.strip())<br>
+&nbsp;&nbsp;&nbsp;&nbsp;digest = session.digest(plaintext, mechanism=pkcs11.Mechanism.SHA256)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;print(json.dumps({'plaintext': line.strip(), 'hash': digest.hex()}))</code>
+          </div>
+          <div class="code-block code-block-sm" style="margin-top:0.75rem">
+            <code>python cryptid.py generate -a sha256 -n 10000 -o inputs.jsonl<br>
+python wrapper.py &lt; inputs.jsonl &gt; hsm_output.jsonl<br>
+python cryptid.py test -i hsm_output.jsonl --level full
+<span class="t-dim"># Note: -i (file) mode runs statistical suite only; differential/extended require --command or -a</span></code>
+            <button class="copy-btn" data-copy="python cryptid.py generate -a sha256 -n 10000 -o inputs.jsonl
+python wrapper.py < inputs.jsonl > hsm_output.jsonl
+python cryptid.py test -i hsm_output.jsonl --level full">copy</button>
+          </div>
+        </div>
+
+        <div class="hw-card">
+          <div class="hw-card-header">
+            <span class="hw-icon">📟</span>
+            <div>
+              <div class="hw-card-title">Firmware / Embedded Device</div>
+              <div class="hw-card-sub">Serial / USB / JTAG</div>
+            </div>
+          </div>
+          <p class="hw-card-desc">Script the device over serial or USB, send hex-encoded inputs, capture hex outputs. The compare command lets you diff device output against a known-good reference.</p>
+          <div class="code-block code-block-sm">
+            <code><span class="t-dim"># serial_wrapper.py — reads from embedded device</span><br>
+import serial, json, sys<br>
+dev = serial.Serial('/dev/ttyUSB0', 115200)<br>
+for line in sys.stdin:<br>
+&nbsp;&nbsp;dev.write((line.strip() + '\n').encode())<br>
+&nbsp;&nbsp;result = dev.readline().decode().strip()<br>
+&nbsp;&nbsp;print(json.dumps({'plaintext': line.strip(), 'hash': result}))</code>
+          </div>
+          <div class="code-block code-block-sm" style="margin-top:0.75rem">
+            <code><span class="t-dim"># Compare device output against OpenSSL reference</span><br>
+python cryptid.py compare \
+&nbsp;&nbsp;--target device_output.jsonl \
+&nbsp;&nbsp;--reference openssl_output.jsonl</code>
+            <button class="copy-btn" data-copy="python cryptid.py compare --target device_output.jsonl --reference openssl_output.jsonl">copy</button>
+          </div>
+        </div>
+
+        <div class="hw-card">
+          <div class="hw-card-header">
+            <span class="hw-icon">⚙️</span>
+            <div>
+              <div class="hw-card-title">Third-Party Library or CLI Tool</div>
+              <div class="hw-card-sub">--command mode</div>
+            </div>
+          </div>
+          <p class="hw-card-desc">If the implementation has a CLI that accepts input on stdin and prints a hex digest, use <code>--command</code> mode directly. cryptid handles both batch-capable tools and single-invocation tools automatically.</p>
+          <div class="code-block code-block-sm">
+            <code><span class="t-dim"># Test any CLI tool that reads stdin, prints hex</span><br>
+python cryptid.py test \
+&nbsp;&nbsp;--command "openssl dgst -sha256 -hex" \
+&nbsp;&nbsp;-n 2000 --level quick<br>
+<span class="t-dim"># Note: --level standard/full with --command spawns many subprocesses and is slow.</span><br>
+<span class="t-dim"># For deep analysis, use the JSONL workflow instead (generate → wrapper → test -i).</span><br><br>
+<span class="t-dim"># Or a custom binary</span><br>
+python cryptid.py test \
+&nbsp;&nbsp;--command "./vendor_hash_tool --algo sha256" \
+&nbsp;&nbsp;-n 5000 --level full</code>
+            <button class="copy-btn" data-copy='python cryptid.py test --command "openssl dgst -sha256 -hex" -n 5000 --level standard'>copy</button>
+          </div>
+        </div>
+
+        <div class="hw-card hw-card-tip">
+          <div class="hw-card-header">
+            <span class="hw-icon">💡</span>
+            <div>
+              <div class="hw-card-title">The Compare Workflow</div>
+              <div class="hw-card-sub">Diff any two implementations</div>
+            </div>
+          </div>
+          <p class="hw-card-desc">The <code>compare</code> command runs both a statistical analysis and a byte-level diff of two JSONL datasets. Use it to verify that a hardware implementation matches a software reference on the same inputs — any deviation is flagged immediately.</p>
+          <div class="code-block code-block-sm">
+            <code><span class="t-dim"># Generate reference vectors from OpenSSL</span><br>
+python cryptid.py generate -a sha256 -n 10000 \
+&nbsp;&nbsp;-o reference.jsonl<br><br>
+<span class="t-dim"># Run same inputs through your device, then compare</span><br>
+python cryptid.py compare \
+&nbsp;&nbsp;--target device.jsonl \
+&nbsp;&nbsp;--reference reference.jsonl</code>
+            <button class="copy-btn" data-copy="python cryptid.py compare --target device.jsonl --reference reference.jsonl">copy</button>
+          </div>
+          <p class="hw-card-note">Any output mismatch on shared inputs is reported as a percentage. A faithful implementation should show 100% match and PASS on both statistical suites.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Lightbox overlay -->
+  <div id="lightbox" class="lightbox" onclick="closeLightbox()">
+    <div class="lightbox-inner" onclick="event.stopPropagation()">
+      <button class="lightbox-close" onclick="closeLightbox()">&#x2715;</button>
+      <img id="lightbox-img" src="" alt="" class="lightbox-img" />
+      <div id="lightbox-caption" class="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       AI NATIVE SECTION
+  ═══════════════════════════════════════════ -->
+  <section class="section ai-native-section" id="ai-native">
+    <div class="container">
+      <div class="section-label">BUILT WITH AI NATIVE</div>
+      <h2 class="section-title">What happens when you build outside your comfort zone?</h2>
+      <div class="two-col two-col-reverse">
+        <div class="col-text">
+          <p>Here's something we want to be upfront about: the lead developer on this project is not a cryptographer. He's not a mathematician. The depth of the methodology in this toolkit — the differential profile analysis, the linear approximation testing, the double-blind calibration protocol — goes well beyond his prior expertise.</p>
+          <p>That's the point.</p>
+          <p>We built cryptid as a deliberate test of our <strong>AI Native development methodology</strong> — a set of techniques for leveraging modern AI to produce work that exceeds what you could accomplish alone. The goal isn't to replace domain expertise. It's to understand how far you can push AI-assisted development into unfamiliar territory, and where the limits are.</p>
+          <p>We think the results speak for themselves — but we also want to hear from people who actually know this field. If you're a cryptographer, a mathematician, or a security researcher and you see something wrong (or something interesting), we genuinely want to know.</p>
+          <div class="ai-native-actions">
+            <a href="https://ai-native.r57labs.com/" target="_blank" class="btn btn-outline">
+              Learn AI Native Methodology →
+            </a>
+            <a href="mailto:mail@r57labs.com" class="btn btn-ghost">
+              Send Feedback or Criticism
+            </a>
+          </div>
+        </div>
+        <div class="col-callout">
+          <div class="callout-card">
+            <div class="callout-quote">"The toolkit's layered approach provides defense in depth: weaknesses invisible to aggregate statistical analysis are caught by differential and sequence correlation tests. No single method suffices."</div>
+            <div class="callout-source">— cryptid whitepaper, R57 Labs, April 2026</div>
+          </div>
+          <div class="callout-card callout-card-sm">
+            <div class="callout-icon">🎓</div>
+            <div>
+              <div class="callout-card-title">AI Native Training</div>
+              <div class="callout-card-body">Learn the techniques we used to build this — and apply them to your own projects outside your comfort zone.</div>
+              <a href="https://ai-native.r57labs.com/" target="_blank" class="callout-link">Explore the curriculum →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       FOOTER
+  ═══════════════════════════════════════════ -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-left">
+        <a href="https://r57labs.com/" target="_blank" class="footer-logo">
+          <img src="assets/r57labs_logo.png" alt="R57 Labs" class="footer-logo-img" />
+        </a>
+        <p class="footer-tagline">Building things with AI. Figuring it out as we go.</p>
+        <p class="footer-copy">© 2026 R57 Labs. cryptid is MIT licensed.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <div class="footer-col-title">Project</div>
+          <a href="https://github.com/r57-labs/cryptid" target="_blank">GitHub Repository</a>
+          <a href="assets/whitepaper.pdf" target="_blank">Whitepaper (PDF)</a>
+          <a href="#how-it-works">Methodology</a>
+          <a href="#findings">Key Findings</a>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">R57 Labs</div>
+          <a href="https://r57labs.com/" target="_blank">r57labs.com</a>
+          <a href="https://ai-native.r57labs.com/" target="_blank">AI Native Training</a>
+          <a href="mailto:mail@r57labs.com">mail@r57labs.com</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
