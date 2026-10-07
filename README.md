@@ -1,6 +1,6 @@
 # cryptid
 
-Black-box cryptographic hash assessment toolkit. Empirically tests whether a hash function implementation behaves as a random oracle, using a layered battery of statistical, differential, and structural analyses.
+Black-box cryptographic hash assessment toolkit. Empirically tests whether a hash function implementation behaves as a random oracle, using a layered battery of statistical, differential, and structural analyses. 
 
 Accompanies the whitepaper: *Empirical Detection of Statistical Weaknesses in Cryptographic Hash Functions*.
 
