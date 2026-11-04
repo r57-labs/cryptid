@@ -67,7 +67,7 @@ def near_collision_analysis(
     if rng is None:
         rng = random.Random(42)
 
-    test_hash = hash_fn(bytes(rng.randint(0, 255) for _ in range(input_bytes)).hex())
+    test_hash = hash_fn(bytes(rng.randint(0, 255) for _ in range(input_bytes)))
     n_output_bits = len(test_hash) * 4
 
     if prefix_lengths is None:
@@ -88,7 +88,7 @@ def near_collision_analysis(
     for _ in range(n_samples):
         # Generate a random input
         inp1 = bytes(rng.randint(0, 255) for _ in range(input_bytes))
-        h1_bits = hex_to_bits(hash_fn(inp1.hex()))
+        h1_bits = hex_to_bits(hash_fn(inp1))
 
         # Create 1-bit-different input
         flip_pos = rng.randint(0, n_input_bits - 1)
@@ -96,11 +96,11 @@ def near_collision_analysis(
         byte_idx = flip_pos // 8
         bit_idx = 7 - (flip_pos % 8)
         inp2[byte_idx] ^= (1 << bit_idx)
-        h2_bits = hex_to_bits(hash_fn(bytes(inp2).hex()))
+        h2_bits = hex_to_bits(hash_fn(bytes(inp2)))
 
         # Create random (unrelated) input
         inp3 = bytes(rng.randint(0, 255) for _ in range(input_bytes))
-        h3_bits = hex_to_bits(hash_fn(inp3.hex()))
+        h3_bits = hex_to_bits(hash_fn(inp3))
 
         # Check prefix matches
         for k in prefix_lengths:
@@ -214,7 +214,7 @@ def sequence_correlation_analysis(
         # Construct input: base bytes + 4-byte counter
         counter_bytes = i.to_bytes(4, 'big')
         inp = base + counter_bytes
-        h = hash_fn(inp.hex())
+        h = hash_fn(inp)
         hashes.append(hex_to_bits(h))
 
     n_output_bits = len(hashes[0])
@@ -365,7 +365,7 @@ def cycle_detection(
     if rng is None:
         rng = random.Random(42)
 
-    test_hash = hash_fn(bytes(rng.randint(0, 255) for _ in range(input_bytes)).hex())
+    test_hash = hash_fn(bytes(rng.randint(0, 255) for _ in range(input_bytes)))
     output_hex_len = len(test_hash)
 
     if verbose:
@@ -377,9 +377,13 @@ def cycle_detection(
     chain_endpoints = Counter()  # where do chains end up?
 
     def iterate(hex_val):
-        """Hash the hex string, treating it as the next input."""
-        # Pad or truncate to input_bytes for consistency
-        padded = (hex_val * ((input_bytes * 2 // len(hex_val)) + 1))[:input_bytes * 2]
+        """Feed the digest back in as the next message (as raw bytes).
+
+        The digest is repeated or truncated to input_bytes so every
+        iteration hashes a message of the same length.
+        """
+        digest = bytes.fromhex(hex_val)
+        padded = (digest * ((input_bytes // len(digest)) + 1))[:input_bytes]
         return hash_fn(padded)[:output_hex_len]
 
     for start_idx in range(n_starts):
@@ -640,13 +644,8 @@ def main():
                 print(f"  Unknown algorithm: {algo}")
                 continue
 
-            def make_wrapper(fn):
-                def wrapper(hex_input):
-                    return fn(hex_input)
-                return wrapper
-
             results = run_extended_analysis(
-                make_wrapper(hash_fn),
+                hash_fn,
                 n_samples=args.size,
                 verbose=True,
             )

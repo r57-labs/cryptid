@@ -1,0 +1,1144 @@
+{
+  "args": {
+    "samples": 5000,
+    "level": "full",
+    "seed": "out-of-family-2026",
+    "implementation_variants": true,
+    "impl_samples": 2000,
+    "impl_level": "standard",
+    "output": "results/out_of_family.json",
+    "verbose": false
+  },
+  "out_of_family": [
+    {
+      "name": "clean control (sha256)",
+      "verdict": "PASS",
+      "signal_sources": [],
+      "output_bits": 256,
+      "n_samples": 5000,
+      "meta_learner": {
+        "probability": 0.08322464479468054,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.5279589253421991,
+        "verdict": "CLEAN \u2014 no anomaly detected",
+        "top_features": [
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "record_distance_stdev_ratio",
+            "contribution": 0.0371,
+            "normalized_value": 0.634
+          },
+          {
+            "feature": "log_n_samples",
+            "contribution": 0.0105,
+            "normalized_value": -0.527
+          },
+          {
+            "feature": "record_distance_deviation",
+            "contribution": 0.0087,
+            "normalized_value": 0.103
+          },
+          {
+            "feature": "mutual_information",
+            "contribution": 0.0054,
+            "normalized_value": -0.095
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.039,
+        "detected": false,
+        "n_significant": 23980
+      },
+      "timings": {
+        "statistical": 2.362928628921509,
+        "differential": 4.807361841201782,
+        "extended": 18.42219877243042,
+        "linear": 28.266502618789673
+      },
+      "errors": [],
+      "wall_seconds": 53.9
+    },
+    {
+      "name": "dead_input_byte",
+      "verdict": "FAIL",
+      "signal_sources": [
+        "differential",
+        "extended"
+      ],
+      "output_bits": 256,
+      "n_samples": 5000,
+      "meta_learner": {
+        "probability": 0.07522835072172124,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.5412860821304647,
+        "verdict": "CLEAN \u2014 no anomaly detected",
+        "top_features": [
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "log_n_samples",
+            "contribution": 0.0105,
+            "normalized_value": -0.527
+          },
+          {
+            "feature": "mutual_information",
+            "contribution": 0.0054,
+            "normalized_value": -0.095
+          },
+          {
+            "feature": "record_distance",
+            "contribution": -0.0,
+            "normalized_value": 0.0
+          },
+          {
+            "feature": "mi_real_norm",
+            "contribution": -0.0007,
+            "normalized_value": 0.015
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 1.0,
+          "detected": true
+        },
+        "byte_diff": {
+          "signal": 1.0,
+          "detected": true
+        },
+        "hamming": {
+          "signal": 1.0,
+          "detected": true
+        },
+        "bit_independence": {
+          "signal": 0.25,
+          "detected": true
+        }
+      },
+      "extended_summary": {
+        "near_collision": {
+          "signal": 1.0,
+          "detected": true
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.039,
+        "detected": false,
+        "n_significant": 24079
+      },
+      "timings": {
+        "statistical": 2.2195231914520264,
+        "differential": 4.666451454162598,
+        "extended": 21.66545796394348,
+        "linear": 27.60008144378662
+      },
+      "errors": [],
+      "wall_seconds": 56.2
+    },
+    {
+      "name": "tail_copy",
+      "verdict": "FAIL",
+      "signal_sources": [
+        "statistical",
+        "differential",
+        "extended",
+        "linear"
+      ],
+      "output_bits": 256,
+      "n_samples": 5000,
+      "meta_learner": {
+        "probability": 1.0,
+        "predicted_label": 1,
+        "label": "weakened",
+        "threshold": 0.4,
+        "confidence": 1.0,
+        "verdict": "STRONG \u2014 almost certainly weakened",
+        "top_features": [
+          {
+            "feature": "interaction_n_strong_frac",
+            "contribution": 9.765,
+            "normalized_value": 32.657
+          },
+          {
+            "feature": "interaction_n_strong_norm",
+            "contribution": 9.4284,
+            "normalized_value": 32.657
+          },
+          {
+            "feature": "entropy_min_byte",
+            "contribution": 4.9372,
+            "normalized_value": -12.756
+          },
+          {
+            "feature": "interaction",
+            "contribution": 3.0176,
+            "normalized_value": 1.918
+          },
+          {
+            "feature": "interaction_n_hits_frac",
+            "contribution": 2.4105,
+            "normalized_value": 14.483
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.44645998100292145,
+          "detected": true,
+          "flagged": true
+        },
+        "entropy": {
+          "signal": 0.7715806256692624,
+          "detected": true,
+          "flagged": true
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.5411046602920959,
+          "detected": true,
+          "flagged": true
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 1.0,
+          "detected": true,
+          "flagged": true
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 1.0,
+          "detected": true
+        },
+        "byte_diff": {
+          "signal": 0.2916,
+          "detected": true
+        },
+        "hamming": {
+          "signal": 0.3055,
+          "detected": true
+        },
+        "bit_independence": {
+          "signal": 1.0,
+          "detected": true
+        }
+      },
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 1.0,
+          "detected": true
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.352,
+        "detected": true,
+        "n_significant": 24018
+      },
+      "timings": {
+        "statistical": 2.273561716079712,
+        "differential": 4.826868534088135,
+        "extended": 33.52376747131348,
+        "linear": 27.82862687110901
+      },
+      "errors": [],
+      "wall_seconds": 68.5
+    },
+    {
+      "name": "output_redundancy",
+      "verdict": "WARN",
+      "signal_sources": [
+        "differential"
+      ],
+      "output_bits": 256,
+      "n_samples": 5000,
+      "meta_learner": {
+        "probability": 0.06888974505226779,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.551850424912887,
+        "verdict": "CLEAN \u2014 no anomaly detected",
+        "top_features": [
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "log_n_samples",
+            "contribution": 0.0105,
+            "normalized_value": -0.527
+          },
+          {
+            "feature": "mutual_information",
+            "contribution": 0.0054,
+            "normalized_value": -0.095
+          },
+          {
+            "feature": "record_distance",
+            "contribution": -0.0,
+            "normalized_value": 0.0
+          },
+          {
+            "feature": "mi_real_norm",
+            "contribution": -0.0003,
+            "normalized_value": 0.006
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 1.0,
+          "detected": true
+        }
+      },
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.0378,
+        "detected": false,
+        "n_significant": 23896
+      },
+      "timings": {
+        "statistical": 2.2218785285949707,
+        "differential": 5.021539688110352,
+        "extended": 33.34668493270874,
+        "linear": 28.408713579177856
+      },
+      "errors": [],
+      "wall_seconds": 69.0
+    },
+    {
+      "name": "permutation_invariant",
+      "verdict": "PASS",
+      "signal_sources": [],
+      "output_bits": 256,
+      "n_samples": 5000,
+      "meta_learner": {
+        "probability": 0.32986729515911273,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.11688784140147883,
+        "verdict": "BORDERLINE \u2014 close to decision boundary",
+        "top_features": [
+          {
+            "feature": "interaction_n_hits_frac",
+            "contribution": 0.6558,
+            "normalized_value": 3.94
+          },
+          {
+            "feature": "interaction_n_hits_norm",
+            "contribution": 0.6171,
+            "normalized_value": 3.94
+          },
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "bit_corr_n_sig_width_norm",
+            "contribution": 0.106,
+            "normalized_value": 1.049
+          },
+          {
+            "feature": "bit_corr_n_sig_frac",
+            "contribution": 0.1012,
+            "normalized_value": 1.049
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": true
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.011386054745015384,
+          "detected": false,
+          "flagged": true
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.0074,
+          "detected": false
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.0414,
+        "detected": false,
+        "n_significant": 23913
+      },
+      "timings": {
+        "statistical": 2.412128448486328,
+        "differential": 4.8600242137908936,
+        "extended": 27.54992938041687,
+        "linear": 26.959243535995483
+      },
+      "errors": [],
+      "wall_seconds": 61.8
+    },
+    {
+      "name": "linear_mask_leak",
+      "verdict": "FAIL",
+      "signal_sources": [
+        "statistical",
+        "differential",
+        "linear"
+      ],
+      "output_bits": 256,
+      "n_samples": 5000,
+      "meta_learner": {
+        "probability": 0.9999994438079607,
+        "predicted_label": 1,
+        "label": "weakened",
+        "threshold": 0.4,
+        "confidence": 0.9999990730132678,
+        "verdict": "STRONG \u2014 almost certainly weakened",
+        "top_features": [
+          {
+            "feature": "interaction_n_strong_frac",
+            "contribution": 4.5093,
+            "normalized_value": 15.081
+          },
+          {
+            "feature": "interaction_n_strong_norm",
+            "contribution": 4.3539,
+            "normalized_value": 15.081
+          },
+          {
+            "feature": "interaction",
+            "contribution": 3.0176,
+            "normalized_value": 1.918
+          },
+          {
+            "feature": "interaction_n_hits_frac",
+            "contribution": 1.155,
+            "normalized_value": 6.939
+          },
+          {
+            "feature": "interaction_n_hits_norm",
+            "contribution": 1.0867,
+            "normalized_value": 6.939
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.27110463376206795,
+          "detected": true,
+          "flagged": true
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 1.0,
+          "detected": true,
+          "flagged": true
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.9957,
+          "detected": true
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.3492,
+        "detected": true,
+        "n_significant": 24078
+      },
+      "timings": {
+        "statistical": 2.189138650894165,
+        "differential": 5.122736930847168,
+        "extended": 38.415804386138916,
+        "linear": 27.240773677825928
+      },
+      "errors": [],
+      "wall_seconds": 73.0
+    }
+  ],
+  "implementation_variants": [
+    {
+      "name": "sha256 correct (pure py)",
+      "verdict": "PASS",
+      "signal_sources": [],
+      "output_bits": 256,
+      "n_samples": 2000,
+      "meta_learner": {
+        "probability": 0.15163780278718964,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.413936995354684,
+        "verdict": "BORDERLINE \u2014 close to decision boundary",
+        "top_features": [
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "entropy_min_byte",
+            "contribution": 0.1543,
+            "normalized_value": -0.399
+          },
+          {
+            "feature": "log_n_samples",
+            "contribution": 0.0244,
+            "normalized_value": -1.223
+          },
+          {
+            "feature": "record_distance_stdev_ratio",
+            "contribution": 0.0074,
+            "normalized_value": 0.127
+          },
+          {
+            "feature": "mutual_information",
+            "contribution": 0.0054,
+            "normalized_value": -0.095
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.0123,
+          "detected": false
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "extended_summary": null,
+      "linear_summary": null,
+      "timings": {
+        "statistical": 1.0565719604492188,
+        "differential": 34.19070076942444
+      },
+      "errors": [],
+      "wall_seconds": 35.2
+    },
+    {
+      "name": "sha256 K[20] 1-bit typo",
+      "verdict": "PASS",
+      "signal_sources": [],
+      "output_bits": 256,
+      "n_samples": 2000,
+      "meta_learner": {
+        "probability": 0.15416504422867275,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.40972492628554547,
+        "verdict": "BORDERLINE \u2014 close to decision boundary",
+        "top_features": [
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "entropy_min_byte",
+            "contribution": 0.1344,
+            "normalized_value": -0.347
+          },
+          {
+            "feature": "record_distance_stdev_ratio",
+            "contribution": 0.0423,
+            "normalized_value": 0.723
+          },
+          {
+            "feature": "log_n_samples",
+            "contribution": 0.0244,
+            "normalized_value": -1.223
+          },
+          {
+            "feature": "mutual_information",
+            "contribution": 0.0054,
+            "normalized_value": -0.095
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "extended_summary": null,
+      "linear_summary": null,
+      "timings": {
+        "statistical": 1.0958619117736816,
+        "differential": 34.85437321662903
+      },
+      "errors": [],
+      "wall_seconds": 36.0
+    },
+    {
+      "name": "sha256 24 of 64 rounds",
+      "verdict": "PASS",
+      "signal_sources": [],
+      "output_bits": 256,
+      "n_samples": 2000,
+      "meta_learner": {
+        "probability": 0.14867091882689293,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.4188818019551785,
+        "verdict": "BORDERLINE \u2014 close to decision boundary",
+        "top_features": [
+          {
+            "feature": "entropy_min_byte",
+            "contribution": 0.1609,
+            "normalized_value": -0.416
+          },
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "log_n_samples",
+            "contribution": 0.0244,
+            "normalized_value": -1.223
+          },
+          {
+            "feature": "mutual_information",
+            "contribution": 0.0054,
+            "normalized_value": -0.095
+          },
+          {
+            "feature": "record_distance",
+            "contribution": -0.0,
+            "normalized_value": 0.0
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.027,
+          "detected": false
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "extended_summary": null,
+      "linear_summary": null,
+      "timings": {
+        "statistical": 1.161100149154663,
+        "differential": 21.138317346572876
+      },
+      "errors": [],
+      "wall_seconds": 22.3
+    },
+    {
+      "name": "sha256 12 of 64 rounds",
+      "verdict": "PASS",
+      "signal_sources": [],
+      "output_bits": 256,
+      "n_samples": 2000,
+      "meta_learner": {
+        "probability": 0.17641251530878224,
+        "predicted_label": 0,
+        "label": "clean",
+        "threshold": 0.4,
+        "confidence": 0.37264580781869633,
+        "verdict": "BORDERLINE \u2014 close to decision boundary",
+        "top_features": [
+          {
+            "feature": "output_bits",
+            "contribution": 0.1609,
+            "normalized_value": 1.499
+          },
+          {
+            "feature": "entropy_min_byte",
+            "contribution": 0.1304,
+            "normalized_value": -0.337
+          },
+          {
+            "feature": "interaction_n_hits_frac",
+            "contribution": 0.0802,
+            "normalized_value": 0.482
+          },
+          {
+            "feature": "interaction_n_hits_norm",
+            "contribution": 0.0754,
+            "normalized_value": 0.482
+          },
+          {
+            "feature": "log_n_samples",
+            "contribution": 0.0244,
+            "normalized_value": -1.223
+          }
+        ]
+      },
+      "stats_summary": {
+        "bit_correlation": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "entropy": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "record_distance": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "frequency": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "mutual_information": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        },
+        "interaction": {
+          "signal": 0.0,
+          "detected": false,
+          "flagged": false
+        }
+      },
+      "differential_summary": {
+        "single_bit": {
+          "signal": 0.0221,
+          "detected": false
+        },
+        "byte_diff": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "hamming": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "bit_independence": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "extended_summary": null,
+      "linear_summary": null,
+      "timings": {
+        "statistical": 1.0601160526275635,
+        "differential": 16.884963989257812
+      },
+      "errors": [],
+      "wall_seconds": 17.9
+    }
+  ]
+}

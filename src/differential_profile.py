@@ -3,11 +3,18 @@
 Differential profile analysis — tests how hash output changes when
 input changes in specific, controlled ways.
 
-Unlike the avalanche test (which checks average flip ratio), this builds
-the full differential matrix: for each input bit position i, what is the
-probability that each output bit position j flips? A perfect hash has
-P(flip) = 0.5 everywhere. A weakened hash may have specific (i,j) pairs
-that deviate.
+This builds the full differential matrix: for each input bit position i,
+what is the probability that each output bit position j flips? A perfect
+hash has P(flip) = 0.5 everywhere. A weakened hash may have specific (i,j)
+pairs that deviate. This is the toolkit's empirical Strict Avalanche
+Criterion test; the "avalanche" row of the statistical suite is an
+inter-record distance check, not an avalanche test.
+
+All tests here generate raw byte strings and pass them to hash_fn as
+bytes, so a single-bit flip in the generated input is a single-bit flip
+in the hashed message. (Before this revision the inputs were hex-encoded
+before hashing, so one generated bit flip changed 1-5 bits of the ASCII
+message actually hashed.)
 
 Tests:
   1. Single-bit differential matrix: flip each input bit, measure each
@@ -115,38 +122,53 @@ def single_bit_differential(
 
     n_input_bits = input_bytes * 8
     # Get output width from first hash
-    test_hash = hash_fn(inputs[0].hex())
+    test_hash = hash_fn(inputs[0])
     n_output_bits = len(test_hash) * 4  # hex chars * 4 bits
 
     if verbose:
         print(f"    Single-bit differential: {n_input_bits} input bits × {n_output_bits} output bits")
         print(f"    Testing {n_samples} samples...", end="", flush=True)
 
-    # For each input bit position, count how often each output bit flips
-    # flip_counts[i][j] = number of times output bit j flipped when input bit i was flipped
-    flip_counts = [[0] * n_output_bits for _ in range(n_input_bits)]
+    # For each input bit position, count how often each output bit flips.
+    # The XOR of the two digests is accumulated as a per-output-byte value
+    # histogram (one increment per digest byte per flip) and expanded to
+    # per-bit flip counts afterwards -- 8x fewer Python operations than
+    # comparing bit lists, with identical results.
+    n_output_bytes = (n_output_bits + 7) // 8
+    byte_hist = [[[0] * 256 for _ in range(n_output_bytes)] for _ in range(n_input_bits)]
 
     for sample_idx, inp in enumerate(inputs):
         # Compute original hash
-        original_hash = hex_to_bits(hash_fn(inp.hex()))
+        original_int = int(hash_fn(inp), 16)
 
         # Flip each input bit and measure output changes
         # For efficiency, only test a subset of input bits per sample
         # but cycle through all bits across samples
         bits_to_test = range(n_input_bits)
         if n_input_bits > 32 and n_samples >= 5000:
-            # Subsample: each input bit still gets ~n_samples/2.5 tests
+            # Subsample: each input bit still gets ~n_samples/3 tests
             bits_to_test = [b for b in range(n_input_bits)
                            if (sample_idx + b) % 3 == 0]
 
         for i_bit in bits_to_test:
             flipped_input = flip_bit(inp, i_bit)
-            flipped_hash = hex_to_bits(hash_fn(flipped_input.hex()))
+            diff = (original_int ^ int(hash_fn(flipped_input), 16)).to_bytes(n_output_bytes, "big")
+            hist = byte_hist[i_bit]
+            for k, v in enumerate(diff):
+                hist[k][v] += 1
 
-            for j_bit in range(n_output_bits):
-                if j_bit < len(original_hash) and j_bit < len(flipped_hash):
-                    if original_hash[j_bit] != flipped_hash[j_bit]:
-                        flip_counts[i_bit][j_bit] += 1
+    # Expand byte-value histograms to per-bit flip counts
+    # flip_counts[i][j] = number of times output bit j flipped when input bit i was flipped
+    flip_counts = [[0] * n_output_bits for _ in range(n_input_bits)]
+    for i_bit in range(n_input_bits):
+        for k in range(n_output_bytes):
+            hist = byte_hist[i_bit][k]
+            for bit in range(8):
+                j_bit = k * 8 + bit
+                if j_bit >= n_output_bits:
+                    break
+                mask = 1 << (7 - bit)
+                flip_counts[i_bit][j_bit] = sum(hist[v] for v in range(256) if v & mask)
 
     # Compute expected flips per bit pair
     # Account for subsampling
@@ -196,9 +218,9 @@ def single_bit_differential(
             if deviation > max_deviation:
                 max_deviation = deviation
 
-            # Bonferroni-corrected significance threshold
-            # p < 0.001 / total_tests for each pair
-            # chi2(1) > 10.83 for p < 0.001
+            # Per-pair significance at p < 0.001 (chi2(1) > 10.83), uncorrected.
+            # Multiple testing is handled below by comparing the count of
+            # significant pairs against the number expected by chance.
             if chi2 > 10.83:
                 significant_pairs.append({
                     "input_bit": i_bit,
@@ -220,10 +242,15 @@ def single_bit_differential(
     # Expected number of significant pairs by chance at p<0.001
     expected_by_chance = total_tests * 0.001
 
-    # Signal detection
+    # Signal detection. The max-deviation criterion scales with the number of
+    # samples behind each pair: the largest |flip rate - 0.5| among ~20K
+    # pairs of a perfect function is about 4.5 * 0.5/sqrt(n), so 0.10 is only
+    # meaningful once n is in the thousands.
+    min_n = min((n for n in samples_per_input_bit if n >= 10), default=n_samples)
+    deviation_threshold = max(0.10, 5.0 * 0.5 / math.sqrt(max(min_n, 1)))
     has_signal = (len(significant_pairs) > max(expected_by_chance * 5, 3) or
                   any(p["chi_squared"] > 50 for p in significant_pairs) or
-                  max_deviation > 0.10)
+                  max_deviation > deviation_threshold)
 
     # Signal strength: how far above chance
     if expected_by_chance > 0 and len(significant_pairs) > 0:
@@ -243,6 +270,7 @@ def single_bit_differential(
         "total_tests": total_tests,
         "max_chi_squared": round(max_chi2, 2),
         "max_deviation": round(max_deviation, 6),
+        "deviation_threshold": round(deviation_threshold, 4),
         "max_output_bit_deviation": round(max_output_bit_deviation, 6),
         "n_significant_pairs": len(significant_pairs),
         "expected_significant_by_chance": round(expected_by_chance, 1),
@@ -278,7 +306,7 @@ def byte_differential(
     inputs = [bytes(rng.randint(0, 255) for _ in range(input_bytes))
               for _ in range(n_samples)]
 
-    test_hash = hash_fn(inputs[0].hex())
+    test_hash = hash_fn(inputs[0])
     n_output_bytes = len(test_hash) // 2  # hex pairs
 
     if verbose:
@@ -290,38 +318,39 @@ def byte_differential(
     # We summarize with: mean XOR delta, entropy of XOR distribution
     results_by_input_byte = []
 
+    # Hash every input once; each modified input is hashed once per input
+    # byte and its delta recorded for every output byte at the same time.
+    # (The previous revision re-hashed inside the output-byte loop, doing
+    # n_output_bytes times the necessary work.)
+    orig_hashes = [bytes.fromhex(hash_fn(inp)) for inp in inputs]
+
     for i_byte in range(input_bytes):
+        delta_counts = [[0] * 256 for _ in range(n_output_bytes)]
+
+        for inp, orig in zip(inputs, orig_hashes):
+            # Modify input byte
+            modified = bytearray(inp)
+            modified[i_byte] = (modified[i_byte] + rng.randint(1, 255)) & 0xFF
+            mod_hash = bytes.fromhex(hash_fn(bytes(modified)))
+
+            for o_byte in range(min(n_output_bytes, len(orig), len(mod_hash))):
+                delta_counts[o_byte][orig[o_byte] ^ mod_hash[o_byte]] += 1
+
         output_byte_entropies = []
         output_byte_mean_deltas = []
-
         for o_byte in range(n_output_bytes):
-            delta_counts = [0] * 256
-
-            for inp in inputs:
-                # Original hash
-                orig = bytes.fromhex(hash_fn(inp.hex()))
-
-                # Modify input byte
-                modified = bytearray(inp)
-                modified[i_byte] = (modified[i_byte] + rng.randint(1, 255)) & 0xFF
-                mod_hash = bytes.fromhex(hash_fn(bytes(modified).hex()))
-
-                if o_byte < len(orig) and o_byte < len(mod_hash):
-                    delta = orig[o_byte] ^ mod_hash[o_byte]
-                    delta_counts[delta] += 1
-
-            # Compute entropy of the XOR delta distribution
-            total = sum(delta_counts)
+            counts = delta_counts[o_byte]
+            total = sum(counts)
             if total > 0:
                 entropy = 0.0
-                for c in delta_counts:
+                for c in counts:
                     if c > 0:
                         p = c / total
                         entropy -= p * math.log2(p)
                 output_byte_entropies.append(entropy)
 
                 # Mean delta (should be ~127.5 for uniform)
-                mean_delta = sum(d * c for d, c in enumerate(delta_counts)) / total
+                mean_delta = sum(d * c for d, c in enumerate(counts)) / total
                 output_byte_mean_deltas.append(mean_delta)
 
         results_by_input_byte.append({
@@ -340,12 +369,13 @@ def byte_differential(
     mean_entropy = sum(all_entropies) / len(all_entropies) if all_entropies else 0
     max_ideal = 8.0  # log2(256)
 
-    # Signal: entropy significantly below 8.0 for any pair
-    # At n_samples=10000, even uniform distribution has entropy slightly below 8.0
-    # due to finite sample effects. Threshold depends on N.
-    expected_min_entropy = max_ideal - math.log2(256) / (2 * n_samples) * 256
-    # Simplified: at 10K samples, expect min ~7.5 by chance across all pairs
-    entropy_threshold = max_ideal - 1.0  # flag if any pair below 7.0
+    # Signal: entropy well below what a uniform delta distribution gives at
+    # this sample count. The plug-in entropy of n uniform draws over 256 bins
+    # is biased low by about 255 / (2 n ln 2) bits (Miller-Madow); the
+    # threshold sits 0.5 bit under that expectation, capped at 7.0 so that
+    # large n does not make the test more aggressive than it has been.
+    expected_entropy = max_ideal - 255.0 / (2.0 * n_samples * math.log(2))
+    entropy_threshold = min(max_ideal - 1.0, expected_entropy - 0.5)
 
     has_signal = min_entropy < entropy_threshold
     signal_strength = max(0.0, (entropy_threshold - min_entropy) / entropy_threshold) if has_signal else 0.0
@@ -357,6 +387,7 @@ def byte_differential(
         "n_output_bytes": n_output_bytes,
         "min_xor_entropy": round(min_entropy, 4),
         "mean_xor_entropy": round(mean_entropy, 4),
+        "entropy_threshold": round(entropy_threshold, 4),
         "max_possible_entropy": max_ideal,
         "signal": has_signal,
         "signal_strength": round(signal_strength, 4),
@@ -387,7 +418,7 @@ def hamming_distance_profile(
 
     n_input_bits = input_bytes * 8
 
-    test_hash = hash_fn(bytes(rng.randint(0, 255) for _ in range(input_bytes)).hex())
+    test_hash = hash_fn(bytes(rng.randint(0, 255) for _ in range(input_bytes)))
     n_output_bits = len(test_hash) * 4
 
     if verbose:
@@ -419,8 +450,8 @@ def hamming_distance_profile(
                 inp2[byte_idx] ^= (1 << bit_idx)
 
             # Compute hashes
-            h1 = hex_to_bits(hash_fn(inp.hex()))
-            h2 = hex_to_bits(hash_fn(bytes(inp2).hex()))
+            h1 = hex_to_bits(hash_fn(inp))
+            h2 = hex_to_bits(hash_fn(bytes(inp2)))
             output_hds.append(hamming_distance(h1, h2))
 
         # Statistics
@@ -449,8 +480,12 @@ def hamming_distance_profile(
     max_mean_deviation = max(r["mean_deviation"] for r in results_by_distance) if results_by_distance else 0
     max_stdev_deviation = max(abs(r["stdev_ratio"] - 1.0) for r in results_by_distance) if results_by_distance else 0
 
-    # At 10K samples, random fluctuation in mean is ~stdev/sqrt(N) ≈ 0.1% of expected
-    has_signal = max_mean_deviation > 0.01 or max_stdev_deviation > 0.1
+    # Thresholds are at least five standard errors: the mean's standard error
+    # is expected_stdev / sqrt(n) (about 0.1% of the expected mean at n=10K),
+    # the stdev's about 1 / sqrt(2n) relative.
+    mean_threshold = max(0.01, 5.0 * (expected_stdev / math.sqrt(n_samples)) / expected_mean_hd)
+    stdev_threshold = max(0.1, 5.0 / math.sqrt(2.0 * n_samples))
+    has_signal = max_mean_deviation > mean_threshold or max_stdev_deviation > stdev_threshold
 
     signal_strength = 0.0
     if has_signal:
@@ -463,7 +498,9 @@ def hamming_distance_profile(
         "expected_output_hd": round(expected_mean_hd, 2),
         "expected_output_stdev": round(expected_stdev, 2),
         "max_mean_deviation": round(max_mean_deviation, 6),
+        "mean_deviation_threshold": round(mean_threshold, 6),
         "max_stdev_ratio_deviation": round(max_stdev_deviation, 4),
+        "stdev_ratio_threshold": round(stdev_threshold, 4),
         "signal": has_signal,
         "signal_strength": round(signal_strength, 4),
         "by_distance": results_by_distance,
@@ -493,7 +530,7 @@ def differential_bit_independence(
     inputs = [bytes(rng.randint(0, 255) for _ in range(input_bytes))
               for _ in range(n_samples)]
 
-    test_hash = hash_fn(inputs[0].hex())
+    test_hash = hash_fn(inputs[0])
     n_output_bits = len(test_hash) * 4
     n_input_bits = input_bytes * 8
 
@@ -501,42 +538,62 @@ def differential_bit_independence(
         print(f"    Differential bit independence: testing output bit correlations")
         print(f"    {n_samples} samples...", end="", flush=True)
 
-    # For a subset of input bits, measure pairwise correlation of output bit flips
-    # Test a subset of input bits (spread evenly) to keep runtime reasonable
+    # For a subset of input bits (spread evenly), measure the pairwise
+    # correlation of output-bit flips across ALL output bit pairs. Each
+    # output bit's flip indicator across samples is packed into one big
+    # int, so every pair's 2x2 table is four popcounts. (The previous
+    # revision sampled 16 output bits; a dependency between two unsampled
+    # bits, e.g. a copied byte, could not be seen.)
     test_input_bits = list(range(0, n_input_bits, max(1, n_input_bits // 8)))[:8]
+    test_output_bits = list(range(n_output_bits))
+    all_ones = (1 << n_samples) - 1
 
     max_correlation = 0.0
     significant_correlations = []
+    # Output bits whose flip indicator is constant across all samples (always
+    # or never flips when input bit i is flipped). For a random function the
+    # chance of that is 2 * 0.5**n per column -- effectively zero -- while a
+    # linear function such as CRC32 has it for EVERY column, because its
+    # output difference depends only on the input difference. phi is
+    # undefined for a constant column, so these are counted separately and
+    # are themselves a bit-independence failure (the flips are perfectly
+    # determined, not independent).
+    n_constant_columns = 0
+    n_columns = 0
 
     for i_bit in test_input_bits:
-        # Collect flip vectors: for each sample, which output bits flipped?
-        flip_vectors = []
+        # cols[j] has bit s set iff output bit j flipped for sample s
+        cols = [0] * n_output_bits
+        for s_idx, inp in enumerate(inputs):
+            diff = int(hash_fn(inp), 16) ^ int(hash_fn(flip_bit(inp, i_bit)), 16)
+            sample_mask = 1 << s_idx
+            # walk set bits of diff (bit 0 of the int is the LAST output bit)
+            while diff:
+                low = diff & -diff
+                pos = low.bit_length() - 1
+                cols[n_output_bits - 1 - pos] |= sample_mask
+                diff ^= low
 
-        for inp in inputs:
-            orig = hex_to_bits(hash_fn(inp.hex()))
-            flipped_input = flip_bit(inp, i_bit)
-            flipped = hex_to_bits(hash_fn(flipped_input.hex()))
-
-            flip_vec = [1 if orig[j] != flipped[j] else 0
-                        for j in range(min(len(orig), n_output_bits))]
-            flip_vectors.append(flip_vec)
-
-        # Measure pairwise correlation between output bit flips
-        # Test a subset of output bit pairs
-        test_output_bits = list(range(0, n_output_bits, max(1, n_output_bits // 16)))[:16]
+        for col in cols:
+            n_columns += 1
+            if col == 0 or col == all_ones:
+                n_constant_columns += 1
 
         for idx_a, j_bit_a in enumerate(test_output_bits):
+            col_a = cols[j_bit_a]
+            na = col_a.bit_count()
             for j_bit_b in test_output_bits[idx_a + 1:]:
-                # Compute phi coefficient between flip_a and flip_b
-                n11 = sum(1 for v in flip_vectors if v[j_bit_a] == 1 and v[j_bit_b] == 1)
-                n10 = sum(1 for v in flip_vectors if v[j_bit_a] == 1 and v[j_bit_b] == 0)
-                n01 = sum(1 for v in flip_vectors if v[j_bit_a] == 0 and v[j_bit_b] == 1)
-                n00 = sum(1 for v in flip_vectors if v[j_bit_a] == 0 and v[j_bit_b] == 0)
+                col_b = cols[j_bit_b]
+                n11 = (col_a & col_b).bit_count()
+                nb = col_b.bit_count()
+                n10 = na - n11
+                n01 = nb - n11
+                n00 = n_samples - n11 - n10 - n01
 
                 # Phi coefficient
-                denom = math.sqrt((n11+n10)*(n01+n00)*(n11+n01)*(n10+n00))
+                denom = math.sqrt((n11 + n10) * (n01 + n00) * (n11 + n01) * (n10 + n00))
                 if denom > 0:
-                    phi = (n11*n00 - n10*n01) / denom
+                    phi = (n11 * n00 - n10 * n01) / denom
                 else:
                     phi = 0.0
 
@@ -566,15 +623,19 @@ def differential_bit_independence(
 
     # Threshold scales with 1/sqrt(N): at N=1000, phi~0.10 is noise; at N=10000, phi~0.03 is noise
     phi_noise_floor = 3.0 / math.sqrt(n_samples)  # ~3 sigma
+    constant_fraction = n_constant_columns / n_columns if n_columns else 0.0
     has_signal = (len(significant_correlations) > max(expected_significant * 5, 3) or
-                  max_correlation > max(phi_noise_floor * 2, 0.05))
+                  max_correlation > max(phi_noise_floor * 2, 0.05) or
+                  (n_samples >= 100 and n_constant_columns > 0))
 
     signal_strength = 0.0
     if has_signal:
         if max_correlation > phi_noise_floor * 2:
             signal_strength = min(1.0, (max_correlation - phi_noise_floor) / 0.3)
-        elif expected_significant > 0:
+        elif expected_significant > 0 and len(significant_correlations) > max(expected_significant * 5, 3):
             signal_strength = min(1.0, (len(significant_correlations) / expected_significant - 1) / 10)
+        if n_constant_columns > 0:
+            signal_strength = max(signal_strength, min(1.0, constant_fraction * 2))
 
     result = {
         "test": "differential_bit_independence",
@@ -582,6 +643,8 @@ def differential_bit_independence(
         "n_input_bits_tested": len(test_input_bits),
         "n_output_bit_pairs_tested": total_pairs,
         "max_phi_correlation": round(max_correlation, 6),
+        "n_constant_flip_columns": n_constant_columns,
+        "n_flip_columns": n_columns,
         "n_significant_correlations": len(significant_correlations),
         "expected_significant_by_chance": round(expected_significant, 1),
         "signal": has_signal,
@@ -751,17 +814,9 @@ def main():
                 print(f"  Unknown algorithm: {algo}")
                 continue
 
-            # Wrapper: our hash functions expect string input, but differential
-            # analysis works with raw bytes. Adapt:
-            def make_wrapper(fn):
-                def wrapper(hex_input: str) -> str:
-                    # Convert hex input back to string for the hash function
-                    # Our hash functions expect plaintext strings, not hex
-                    return fn(hex_input)
-                return wrapper
-
+            # Built-in functions accept raw bytes directly (see generate_dataset.as_bytes)
             results = run_differential_analysis(
-                make_wrapper(hash_fn),
+                hash_fn,
                 n_samples=args.size,
                 verbose=True,
             )

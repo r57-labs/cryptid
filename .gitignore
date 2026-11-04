@@ -37,8 +37,6 @@ data/
 CHANGELOG.md
 STATE.md
 
-# PDF build script (not part of the toolkit)
-whitepaper.py
 
 # Temporary files
 *.tmp

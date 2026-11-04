@@ -30,60 +30,74 @@ import zlib
 from pathlib import Path
 
 
+def as_bytes(data) -> bytes:
+    """Return the message bytes a hash function should consume.
+
+    Every built-in function accepts either text (hashed as its UTF-8
+    encoding, which is what the JSONL record formats carry) or raw bytes
+    (what the chosen-input tiers -- differential, extended, linear -- feed,
+    so that a single-bit flip in the generated input is a single-bit flip
+    in the hashed message).
+    """
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        return bytes(data)
+    return str(data).encode("utf-8")
+
+
 # --- Hash Functions ---
 
-def hash_crc32(plaintext: str) -> str:
+def hash_crc32(plaintext) -> str:
     """CRC32 hash, returned as zero-padded 8-char hex string."""
-    checksum = zlib.crc32(plaintext.encode("utf-8")) & 0xFFFFFFFF
+    checksum = zlib.crc32(as_bytes(plaintext)) & 0xFFFFFFFF
     return f"{checksum:08x}"
 
 
-def hash_adler32(plaintext: str) -> str:
+def hash_adler32(plaintext) -> str:
     """Adler-32 checksum, returned as 8-char hex string."""
-    checksum = zlib.adler32(plaintext.encode("utf-8")) & 0xFFFFFFFF
+    checksum = zlib.adler32(as_bytes(plaintext)) & 0xFFFFFFFF
     return f"{checksum:08x}"
 
 
-def hash_md4(plaintext: str) -> str:
+def hash_md4(plaintext) -> str:
     """MD4 hash — cryptographically broken predecessor to MD5. 128-bit output."""
     # MD4 may or may not be available depending on OpenSSL build
     try:
-        return hashlib.new("md4", plaintext.encode("utf-8")).hexdigest()
+        return hashlib.new("md4", as_bytes(plaintext)).hexdigest()
     except ValueError:
         # Fallback: pure Python MD4 (simplified)
         # If not available, skip this algorithm
         raise RuntimeError("MD4 not available in this Python build")
 
 
-def hash_fnv1a_32(plaintext: str) -> str:
+def hash_fnv1a_32(plaintext) -> str:
     """FNV-1a hash (32-bit). Non-cryptographic, widely used in hash tables."""
     FNV_OFFSET = 0x811c9dc5
     FNV_PRIME = 0x01000193
     h = FNV_OFFSET
-    for b in plaintext.encode("utf-8"):
+    for b in as_bytes(plaintext):
         h ^= b
         h = (h * FNV_PRIME) & 0xFFFFFFFF
     return f"{h:08x}"
 
 
-def hash_fnv1a_64(plaintext: str) -> str:
+def hash_fnv1a_64(plaintext) -> str:
     """FNV-1a hash (64-bit). Non-cryptographic, widely used in hash tables."""
     FNV_OFFSET = 0xcbf29ce484222325
     FNV_PRIME = 0x00000100000001B3
     h = FNV_OFFSET
-    for b in plaintext.encode("utf-8"):
+    for b in as_bytes(plaintext):
         h ^= b
         h = (h * FNV_PRIME) & 0xFFFFFFFFFFFFFFFF
     return f"{h:016x}"
 
 
-def hash_siphash24(plaintext: str) -> str:
+def hash_siphash24(plaintext) -> str:
     """SipHash-2-4 (64-bit). Keyed PRF by djb, used for hash table DoS protection."""
     # Python's hash() on bytes uses SipHash internally, but we need deterministic output.
     # Implement SipHash-2-4 with a fixed key.
     k0 = 0x0706050403020100
     k1 = 0x0f0e0d0c0b0a0908
-    data = plaintext.encode("utf-8")
+    data = as_bytes(plaintext)
 
     def _rotl64(x, b):
         return ((x << b) | (x >> (64 - b))) & 0xFFFFFFFFFFFFFFFF
@@ -141,9 +155,9 @@ def hash_siphash24(plaintext: str) -> str:
     return f"{result:016x}"
 
 
-def hash_murmur3_32(plaintext: str) -> str:
+def hash_murmur3_32(plaintext) -> str:
     """MurmurHash3 (32-bit). Extremely widely deployed non-crypto hash."""
-    data = plaintext.encode("utf-8")
+    data = as_bytes(plaintext)
     seed = 0
     length = len(data)
     h = seed & 0xFFFFFFFF
@@ -187,18 +201,18 @@ def hash_murmur3_32(plaintext: str) -> str:
     return f"{h:08x}"
 
 
-def hash_djb2(plaintext: str) -> str:
+def hash_djb2(plaintext) -> str:
     """DJB2 hash — classic non-crypto hash by Dan Bernstein. Very simple, 32-bit."""
     h = 5381
-    for c in plaintext.encode("utf-8"):
+    for c in as_bytes(plaintext):
         h = ((h << 5) + h + c) & 0xFFFFFFFF  # h * 33 + c
     return f"{h:08x}"
 
 
-def hash_jenkins(plaintext: str) -> str:
+def hash_jenkins(plaintext) -> str:
     """Jenkins one-at-a-time hash. Simple non-crypto, 32-bit."""
     h = 0
-    for b in plaintext.encode("utf-8"):
+    for b in as_bytes(plaintext):
         h = (h + b) & 0xFFFFFFFF
         h = (h + (h << 10)) & 0xFFFFFFFF
         h ^= (h >> 6)
@@ -208,13 +222,28 @@ def hash_jenkins(plaintext: str) -> str:
     return f"{h:08x}"
 
 
-def hash_pearson(plaintext: str) -> str:
+def _pearson_table() -> list[int]:
+    """A fixed pseudo-random permutation of 0..255, as Pearson (1990) specifies.
+
+    (An earlier revision used the affine table T[i] = 167*i + 53 mod 256,
+    which is a permutation but not a random one and made the construction
+    weaker than Pearson hashing as published.)
+    """
+    table = list(range(256))
+    random.Random(0x50EA2501).shuffle(table)
+    return table
+
+
+_PEARSON_T = _pearson_table()
+
+
+def hash_pearson(plaintext) -> str:
     """
     Pearson hashing — 8-bit lookup-table based hash, extended to 64 bits
     by hashing with 8 different initial values. Very simple construction.
     """
-    T = [(i * 167 + 53) & 0xFF for i in range(256)]
-    data = plaintext.encode("utf-8")
+    T = _PEARSON_T
+    data = as_bytes(plaintext)
     result = []
     for init in range(8):
         h = T[(data[0] + init) & 0xFF] if data else init
@@ -224,62 +253,62 @@ def hash_pearson(plaintext: str) -> str:
     return bytes(result).hex()
 
 
-def hash_md5(plaintext: str) -> str:
+def hash_md5(plaintext) -> str:
     """MD5 hash, returned as 32-char hex string."""
-    return hashlib.md5(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.md5(as_bytes(plaintext)).hexdigest()
 
 
-def hash_sha1(plaintext: str) -> str:
+def hash_sha1(plaintext) -> str:
     """SHA-1 hash, returned as 40-char hex string."""
-    return hashlib.sha1(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.sha1(as_bytes(plaintext)).hexdigest()
 
 
-def hash_sha256(plaintext: str) -> str:
+def hash_sha256(plaintext) -> str:
     """SHA-256 hash, returned as 64-char hex string."""
-    return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.sha256(as_bytes(plaintext)).hexdigest()
 
 
-def hash_blake2b(plaintext: str) -> str:
+def hash_blake2b(plaintext) -> str:
     """BLAKE2b hash (256-bit/32-byte output), returned as 64-char hex string."""
-    return hashlib.blake2b(plaintext.encode("utf-8"), digest_size=32).hexdigest()
+    return hashlib.blake2b(as_bytes(plaintext), digest_size=32).hexdigest()
 
 
-def hash_sm3(plaintext: str) -> str:
+def hash_sm3(plaintext) -> str:
     """SM3 hash (Chinese national standard), returned as 64-char hex string."""
-    return hashlib.new("sm3", plaintext.encode("utf-8")).hexdigest()
+    return hashlib.new("sm3", as_bytes(plaintext)).hexdigest()
 
 
-def hash_sha3_256(plaintext: str) -> str:
+def hash_sha3_256(plaintext) -> str:
     """SHA-3 (256-bit), returned as 64-char hex string."""
-    return hashlib.sha3_256(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.sha3_256(as_bytes(plaintext)).hexdigest()
 
 
-def hash_sha512(plaintext: str) -> str:
+def hash_sha512(plaintext) -> str:
     """SHA-512 hash (NSA-designed, 64-bit word variant), returned as 128-char hex string."""
-    return hashlib.sha512(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.sha512(as_bytes(plaintext)).hexdigest()
 
 
-def hash_sha224(plaintext: str) -> str:
+def hash_sha224(plaintext) -> str:
     """SHA-224 (truncated SHA-256 variant), returned as 56-char hex string."""
-    return hashlib.sha224(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.sha224(as_bytes(plaintext)).hexdigest()
 
 
-def hash_sha512_256(plaintext: str) -> str:
+def hash_sha512_256(plaintext) -> str:
     """SHA-512/256 (SHA-512 with different IV, truncated to 256 bits)."""
-    return hashlib.new("sha512_256", plaintext.encode("utf-8")).hexdigest()
+    return hashlib.new("sha512_256", as_bytes(plaintext)).hexdigest()
 
 
-def hash_sha3_512(plaintext: str) -> str:
+def hash_sha3_512(plaintext) -> str:
     """SHA-3 (512-bit), Keccak sponge construction."""
-    return hashlib.sha3_512(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.sha3_512(as_bytes(plaintext)).hexdigest()
 
 
-def hash_blake2s(plaintext: str) -> str:
+def hash_blake2s(plaintext) -> str:
     """BLAKE2s hash (256-bit, optimized for 32-bit platforms)."""
-    return hashlib.blake2s(plaintext.encode("utf-8")).hexdigest()
+    return hashlib.blake2s(as_bytes(plaintext)).hexdigest()
 
 
-def _sm4_cbc_mac(plaintext: str) -> str:
+def _sm4_cbc_mac(plaintext) -> str:
     """
     SM4 in CBC-MAC mode — Chinese national block cipher (paired with SM3).
     Fixed key, zero IV. 128-bit output. Same construction as AES-128 CBC-MAC.
@@ -289,7 +318,7 @@ def _sm4_cbc_mac(plaintext: str) -> str:
     key = b"SM4_FIXED_KEY_16"  # 16-byte fixed key
     iv = b"\x00" * 16
 
-    data = plaintext.encode("utf-8")
+    data = as_bytes(plaintext)
     pad_len = 16 - (len(data) % 16)
     data += bytes([pad_len]) * pad_len
 
@@ -299,7 +328,7 @@ def _sm4_cbc_mac(plaintext: str) -> str:
     return ct[-16:].hex()
 
 
-def _camellia_cbc_mac(plaintext: str) -> str:
+def _camellia_cbc_mac(plaintext) -> str:
     """
     Camellia-128 in CBC-MAC mode — Japanese block cipher (NTT/Mitsubishi),
     widely used in TLS. Fixed key, zero IV. 128-bit output.
@@ -309,7 +338,7 @@ def _camellia_cbc_mac(plaintext: str) -> str:
     key = b"CAMELLIA_FXD_KEY"  # 16-byte fixed key
     iv = b"\x00" * 16
 
-    data = plaintext.encode("utf-8")
+    data = as_bytes(plaintext)
     pad_len = 16 - (len(data) % 16)
     data += bytes([pad_len]) * pad_len
 
@@ -319,7 +348,7 @@ def _camellia_cbc_mac(plaintext: str) -> str:
     return ct[-16:].hex()
 
 
-def _aes128_cbc_mac(plaintext: str) -> str:
+def _aes128_cbc_mac(plaintext) -> str:
     """
     AES-128 in CBC-MAC mode — treats a fixed key and zero IV as a
     'hash-like' construction. The plaintext is padded to 16-byte blocks
@@ -333,7 +362,7 @@ def _aes128_cbc_mac(plaintext: str) -> str:
     key = b"AES128_FIXED_KEY"  # 16-byte fixed key
     iv = b"\x00" * 16
 
-    data = plaintext.encode("utf-8")
+    data = as_bytes(plaintext)
     # PKCS7-style padding to 16-byte boundary
     pad_len = 16 - (len(data) % 16)
     data += bytes([pad_len]) * pad_len
@@ -346,20 +375,30 @@ def _aes128_cbc_mac(plaintext: str) -> str:
     return ct[-16:].hex()
 
 
-def _chacha20_prf(plaintext: str) -> str:
+def _chacha20_prf(plaintext) -> str:
     """
-    ChaCha20 used as a PRF — encrypts a zero block using the plaintext's
-    hash as the nonce. Fixed key. The first 32 bytes of output keystream
-    serve as the 256-bit 'digest'.
+    ChaCha20 used as a PRF of the input — the (padded) message is the
+    256-bit KEY, the nonce and counter are fixed zeros, and the first 32
+    bytes of keystream are the 'digest'. The message bits therefore enter
+    the ChaCha20 quarter-rounds directly.
 
-    As with AES, this is not a standard hash construction; it exercises
-    the ChaCha20 round function for statistical testing.
+    Messages of up to 31 bytes are padded 0x80 00..00 to 32 bytes. Longer
+    messages are first compressed with SHA-256 (a hash-then-PRF fallback;
+    the toolkit's generated inputs are all short enough to take the direct
+    path). This is not a standard hash construction; it exercises the
+    ChaCha20 round function for statistical testing.
+
+    (An earlier revision used a fixed key and nonce = MD5(message), which
+    meant the tests were exercising MD5's diffusion, not ChaCha20's.)
     """
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 
-    key = hashlib.sha256(b"ChaCha20_FIXED_KEY").digest()  # 32-byte fixed key
-    # Derive a 16-byte nonce deterministically from the plaintext
-    nonce = hashlib.md5(plaintext.encode("utf-8")).digest()
+    data = as_bytes(plaintext)
+    if len(data) <= 31:
+        key = (data + b"\x80" + b"\x00" * 32)[:32]
+    else:
+        key = hashlib.sha256(data).digest()
+    nonce = b"\x00" * 16  # 4-byte counter + 12-byte nonce, both zero
 
     cipher = Cipher(algorithms.ChaCha20(key, nonce), mode=None)
     encryptor = cipher.encryptor()
@@ -370,25 +409,52 @@ def _chacha20_prf(plaintext: str) -> str:
 
 class RandomOracle:
     """
-    Synthetic random oracle — deterministic random mapping from plaintext
-    to hex string of specified length. Uses a seeded PRNG so results are
-    reproducible but contain no learnable structure.
+    Synthetic random oracle — a deterministic random mapping from message to
+    a hex digest of the requested width, derived from SHA-256 of a per-oracle
+    seed and the message bytes (extended with a block counter for widths
+    beyond 256 bits). Reproducible, with no learnable structure beyond
+    SHA-256's own. Stateless: an earlier revision memoized every call in an
+    unbounded dict, which grew to gigabytes under cycle detection.
     """
 
     def __init__(self, output_hex_len: int = 32, seed: int = 42):
         self.output_hex_len = output_hex_len
         self.seed = seed
-        self._cache: dict[str, str] = {}
+        self._prefix = str(seed).encode() + b":"
 
-    def __call__(self, plaintext: str) -> str:
-        if plaintext not in self._cache:
-            # Seed deterministically from the plaintext + global seed
-            h = hashlib.sha256(f"{self.seed}:{plaintext}".encode()).digest()
-            rng = random.Random(int.from_bytes(h[:8], "big"))
-            self._cache[plaintext] = "".join(
-                rng.choices("0123456789abcdef", k=self.output_hex_len)
-            )
-        return self._cache[plaintext]
+    def __call__(self, plaintext) -> str:
+        data = self._prefix + as_bytes(plaintext)
+        out = hashlib.sha256(data).hexdigest()
+        block = 1
+        while len(out) < self.output_hex_len:
+            out += hashlib.sha256(data + block.to_bytes(2, "big")).hexdigest()
+            block += 1
+        return out[:self.output_hex_len]
+
+
+# Published known-answer vectors used by `cryptid kat` to self-check the
+# hand-rolled implementations (the hashlib/cryptography-backed functions are
+# checked against their library reference instead). Sources: SipHash paper
+# appendix (key 00..0f), MurmurHash3 reference (x86_32, seed 0), FNV
+# reference vectors, Bob Jenkins' one-at-a-time, zlib CRC32.
+_FOX = "The quick brown fox jumps over the lazy dog"
+KNOWN_ANSWERS = {
+    "siphash24": [("", "726fdb47dd0e0e31"),
+                  (bytes(range(15)), "a129ca6149be45e5")],
+    "murmur3_32": [("", "00000000"), ("hello", "248bfa47"), (_FOX, "2e4ff723")],
+    "fnv1a_32": [("a", "e40c292c"), ("foobar", "bf9cf968")],
+    "fnv1a_64": [("a", "af63dc4c8601ec8c")],
+    "jenkins": [("a", "ca2e9442"), (_FOX, "519e91f5")],
+    "djb2": [("a", f"{5381 * 33 + 97:08x}")],
+    "crc32": [("abc", "352441c2")],
+    "adler32": [("Wikipedia", "11e60398")],
+    "sha256": [("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")],
+    "sha1": [("abc", "a9993e364706816aba3e25717850c26c9cd0d89d")],
+    "md5": [("abc", "900150983cd24fb0d6963f7d28e17f72")],
+    "sha3_256": [("abc", "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532")],
+    "sha512": [("abc", "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+                       "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f")],
+}
 
 
 HASH_FUNCTIONS = {

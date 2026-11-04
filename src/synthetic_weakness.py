@@ -665,3 +665,170 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ============================================================
+# Out-of-family weaknesses (held out from detector design)
+# ============================================================
+#
+# The four families above were designed alongside the statistical suite and
+# share its feature vocabulary (length parity, first-character bit, byte
+# sums, byte-subset parities), so the suite's accuracy on them is a
+# calibration result, not evidence of generalization. The classes below
+# were written after the detectors were frozen, specifically to be things
+# the detectors were NOT built to look for. experiments/out_of_family_eval.py
+# runs the full pipeline against them and reports the catch matrix as-is.
+#
+# All classes accept text (hashed as UTF-8) or raw bytes.
+
+def _msg_bytes(message) -> bytes:
+    if isinstance(message, (bytes, bytearray, memoryview)):
+        return bytes(message)
+    return str(message).encode("utf-8")
+
+
+class _SeededSha256:
+    """Base: SHA-256 keyed with a per-variant seed, truncated to output_bytes."""
+
+    def __init__(self, seed: bytes, output_bytes: int = 32):
+        self.seed = seed
+        self.output_bytes = output_bytes
+
+    def _strong(self, data: bytes) -> bytearray:
+        return bytearray(hashlib.sha256(self.seed + data).digest()[:self.output_bytes])
+
+    def _coin(self, tag: bytes, data: bytes) -> float:
+        """Deterministic per-message uniform(0,1) so a variant is a function."""
+        h = hashlib.sha256(self.seed + tag + data).digest()
+        return int.from_bytes(h[:8], "big") / 2**64
+
+
+class DeadInputByteHash(_SeededSha256):
+    """Implementation flaw: one input byte is ignored (zeroed before hashing).
+
+    Output statistics are perfect; the only symptom is that flipping any bit
+    of that byte never changes the digest. Nothing in the statistical suite
+    looks for an input byte the output is *independent* of.
+    """
+    weakness_type = "dead_input_byte"
+
+    def __init__(self, seed, dead_byte: int = 5, output_bytes: int = 32):
+        super().__init__(seed, output_bytes)
+        self.dead_byte = dead_byte
+
+    def __call__(self, message) -> str:
+        data = bytearray(_msg_bytes(message))
+        if self.dead_byte < len(data):
+            data[self.dead_byte] = 0
+        return self._strong(bytes(data)).hex()
+
+    def describe(self):
+        return {"type": self.weakness_type, "params": {"dead_byte": self.dead_byte}}
+
+
+class TailCopyHash(_SeededSha256):
+    """Leak outside the suite's scanned ranges: with probability `rate` the
+    LAST digest byte is set to the LAST message byte. The statistical suite
+    correlates only the first 32 input bits and (for interactions) the first
+    32 output bits; the linear tier covers the first 40 input and 64 output
+    bits. Only the single-bit differential matrix spans every pair.
+    """
+    weakness_type = "tail_copy"
+
+    def __init__(self, seed, rate: float = 0.7, output_bytes: int = 32):
+        super().__init__(seed, output_bytes)
+        self.rate = rate
+
+    def __call__(self, message) -> str:
+        data = _msg_bytes(message)
+        out = self._strong(data)
+        if data and self._coin(b"tail", data) < self.rate:
+            out[-1] = data[-1]
+        return out.hex()
+
+    def describe(self):
+        return {"type": self.weakness_type, "params": {"rate": self.rate}}
+
+
+class OutputRedundancyHash(_SeededSha256):
+    """Output-only structure: with probability `rate` the last digest byte is
+    a copy of the first. No input feature predicts anything, every byte is
+    individually uniform; the weakness is a dependency *between* output
+    bytes, which only the differential bit-independence test examines, and
+    it samples 16 of the output bits.
+    """
+    weakness_type = "output_redundancy"
+
+    def __init__(self, seed, rate: float = 0.7, output_bytes: int = 32):
+        super().__init__(seed, output_bytes)
+        self.rate = rate
+
+    def __call__(self, message) -> str:
+        data = _msg_bytes(message)
+        out = self._strong(data)
+        if self._coin(b"dup", data) < self.rate:
+            out[-1] = out[0]
+        return out.hex()
+
+    def describe(self):
+        return {"type": self.weakness_type, "params": {"rate": self.rate}}
+
+
+class PermutationInvariantHash(_SeededSha256):
+    """Structural weakness with no statistical signature: the message bytes
+    are sorted before hashing, so any permutation of a message collides.
+    Second preimages are trivial, yet every digest is a uniform, perfectly
+    avalanching function of the (sorted) input. Expected to be missed by
+    every black-box test here; included to document the boundary.
+    """
+    weakness_type = "permutation_invariant"
+
+    def __call__(self, message) -> str:
+        data = bytes(sorted(_msg_bytes(message)))
+        return self._strong(data).hex()
+
+    def describe(self):
+        return {"type": self.weakness_type, "params": {}}
+
+
+class LinearMaskLeakHash(_SeededSha256):
+    """Three-bit linear leak: with probability `rate`, digest bit `out_bit`
+    is set to the XOR of three message bits spread across different bytes.
+    Pairwise independent of every single input bit, so bit correlation and
+    the byte-aligned interaction features cannot see it; only a 3-bit input
+    mask that happens to be sampled by the linear-approximation tier can.
+    """
+    weakness_type = "linear_mask_leak"
+
+    def __init__(self, seed, in_bits=(10, 37, 61), out_bit: int = 100, rate: float = 0.7,
+                 output_bytes: int = 32):
+        super().__init__(seed, output_bytes)
+        self.in_bits = tuple(in_bits)
+        self.out_bit = out_bit
+        self.rate = rate
+
+    def __call__(self, message) -> str:
+        data = _msg_bytes(message)
+        out = self._strong(data)
+        if self._coin(b"lin", data) < self.rate:
+            v = 0
+            for b in self.in_bits:
+                if b // 8 < len(data):
+                    v ^= (data[b // 8] >> (7 - b % 8)) & 1
+            byte_idx, bit_idx = self.out_bit // 8, 7 - (self.out_bit % 8)
+            if byte_idx < len(out):
+                out[byte_idx] = (out[byte_idx] & ~(1 << bit_idx)) | (v << bit_idx)
+        return out.hex()
+
+    def describe(self):
+        return {"type": self.weakness_type,
+                "params": {"in_bits": list(self.in_bits), "out_bit": self.out_bit, "rate": self.rate}}
+
+
+OUT_OF_FAMILY = {
+    "dead_input_byte": DeadInputByteHash,
+    "tail_copy": TailCopyHash,
+    "output_redundancy": OutputRedundancyHash,
+    "permutation_invariant": PermutationInvariantHash,
+    "linear_mask_leak": LinearMaskLeakHash,
+}

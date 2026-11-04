@@ -1,0 +1,952 @@
+{
+  "model": "../models/meta_learner_v4.json",
+  "seed_base": 900000,
+  "output_bits": [
+    64,
+    128,
+    160,
+    256
+  ],
+  "sample_sizes": [
+    2000,
+    10000
+  ],
+  "evaluation": {
+    "n_examples": 96,
+    "threshold": 0.4,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "confusion": {
+      "tp": 54,
+      "fp": 0,
+      "tn": 42,
+      "fn": 0
+    },
+    "clean_probability_range": [
+      0.0507,
+      0.1518
+    ],
+    "weakened_probability_range": [
+      0.402,
+      1.0
+    ],
+    "by_type": {
+      "clean": {
+        "n": 42,
+        "accuracy": 1.0
+      },
+      "subset_leak": {
+        "n": 10,
+        "accuracy": 1.0
+      },
+      "weak_avalanche": {
+        "n": 14,
+        "accuracy": 1.0
+      },
+      "frequency_bias": {
+        "n": 12,
+        "accuracy": 1.0
+      },
+      "bit_correlation": {
+        "n": 18,
+        "accuracy": 1.0
+      }
+    },
+    "by_width": {
+      "64": {
+        "n": 24,
+        "accuracy": 1.0
+      },
+      "128": {
+        "n": 24,
+        "accuracy": 1.0
+      },
+      "160": {
+        "n": 24,
+        "accuracy": 1.0
+      },
+      "256": {
+        "n": 24,
+        "accuracy": 1.0
+      }
+    },
+    "by_sample_size": {
+      "2000": {
+        "n": 48,
+        "accuracy": 1.0
+      },
+      "10000": {
+        "n": 48,
+        "accuracy": 1.0
+      }
+    },
+    "rows": [
+      {
+        "codename": "jade-mirror",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1225,
+        "predicted": 0
+      },
+      {
+        "codename": "cedar-cipher",
+        "type": "subset_leak",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9091,
+        "predicted": 1
+      },
+      {
+        "codename": "wren-mirror",
+        "type": "subset_leak",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.8819,
+        "predicted": 1
+      },
+      {
+        "codename": "wren-vault",
+        "type": "weak_avalanche",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9867,
+        "predicted": 1
+      },
+      {
+        "codename": "ember-mirror",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1367,
+        "predicted": 0
+      },
+      {
+        "codename": "quartz-tide",
+        "type": "frequency_bias",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.7265,
+        "predicted": 1
+      },
+      {
+        "codename": "zinc-kestrel",
+        "type": "bit_correlation",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9999,
+        "predicted": 1
+      },
+      {
+        "codename": "night-quarry",
+        "type": "frequency_bias",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.402,
+        "predicted": 1
+      },
+      {
+        "codename": "zinc-echo",
+        "type": "bit_correlation",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.6647,
+        "predicted": 1
+      },
+      {
+        "codename": "iron-beacon",
+        "type": "bit_correlation",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.8714,
+        "predicted": 1
+      },
+      {
+        "codename": "wren-juniper",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.0969,
+        "predicted": 0
+      },
+      {
+        "codename": "umbra-iris",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1051,
+        "predicted": 0
+      },
+      {
+        "codename": "cedar-whisper",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0547,
+        "predicted": 0
+      },
+      {
+        "codename": "haze-vault",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0707,
+        "predicted": 0
+      },
+      {
+        "codename": "jade-harbor",
+        "type": "bit_correlation",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9996,
+        "predicted": 1
+      },
+      {
+        "codename": "wren-falcon",
+        "type": "weak_avalanche",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9718,
+        "predicted": 1
+      },
+      {
+        "codename": "jade-orbit",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0566,
+        "predicted": 0
+      },
+      {
+        "codename": "thorn-delta",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0594,
+        "predicted": 0
+      },
+      {
+        "codename": "larch-vault",
+        "type": "bit_correlation",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9996,
+        "predicted": 1
+      },
+      {
+        "codename": "jade-delta",
+        "type": "bit_correlation",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9232,
+        "predicted": 1
+      },
+      {
+        "codename": "coral-lantern",
+        "type": "subset_leak",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9983,
+        "predicted": 1
+      },
+      {
+        "codename": "cedar-vault",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0523,
+        "predicted": 0
+      },
+      {
+        "codename": "knot-juniper",
+        "type": "bit_correlation",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9926,
+        "predicted": 1
+      },
+      {
+        "codename": "rust-iris",
+        "type": "frequency_bias",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 1.0,
+        "predicted": 1
+      },
+      {
+        "codename": "amber-glacier",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1203,
+        "predicted": 0
+      },
+      {
+        "codename": "amber-whisper",
+        "type": "subset_leak",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.8802,
+        "predicted": 1
+      },
+      {
+        "codename": "knot-cipher",
+        "type": "bit_correlation",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.6713,
+        "predicted": 1
+      },
+      {
+        "codename": "larch-harbor",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1334,
+        "predicted": 0
+      },
+      {
+        "codename": "slate-quarry",
+        "type": "weak_avalanche",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.5207,
+        "predicted": 1
+      },
+      {
+        "codename": "flint-iris",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1233,
+        "predicted": 0
+      },
+      {
+        "codename": "larch-tide",
+        "type": "subset_leak",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.8938,
+        "predicted": 1
+      },
+      {
+        "codename": "moss-mirror",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1125,
+        "predicted": 0
+      },
+      {
+        "codename": "wren-mirror",
+        "type": "weak_avalanche",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.923,
+        "predicted": 1
+      },
+      {
+        "codename": "rust-lantern",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1158,
+        "predicted": 0
+      },
+      {
+        "codename": "zinc-cipher",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1518,
+        "predicted": 0
+      },
+      {
+        "codename": "coral-kestrel",
+        "type": "bit_correlation",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9977,
+        "predicted": 1
+      },
+      {
+        "codename": "ember-delta",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0672,
+        "predicted": 0
+      },
+      {
+        "codename": "quartz-glacier",
+        "type": "subset_leak",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.7924,
+        "predicted": 1
+      },
+      {
+        "codename": "moss-delta",
+        "type": "weak_avalanche",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9418,
+        "predicted": 1
+      },
+      {
+        "codename": "rust-lantern",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0608,
+        "predicted": 0
+      },
+      {
+        "codename": "amber-prism",
+        "type": "bit_correlation",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9978,
+        "predicted": 1
+      },
+      {
+        "codename": "flint-delta",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0681,
+        "predicted": 0
+      },
+      {
+        "codename": "moss-quarry",
+        "type": "bit_correlation",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.8239,
+        "predicted": 1
+      },
+      {
+        "codename": "rust-summit",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0616,
+        "predicted": 0
+      },
+      {
+        "codename": "thorn-raven",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0538,
+        "predicted": 0
+      },
+      {
+        "codename": "azure-anvil",
+        "type": "frequency_bias",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9821,
+        "predicted": 1
+      },
+      {
+        "codename": "rust-harbor",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0585,
+        "predicted": 0
+      },
+      {
+        "codename": "ghost-quarry",
+        "type": "subset_leak",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9993,
+        "predicted": 1
+      },
+      {
+        "codename": "knot-harbor",
+        "type": "bit_correlation",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.5957,
+        "predicted": 1
+      },
+      {
+        "codename": "brass-nexus",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.0978,
+        "predicted": 0
+      },
+      {
+        "codename": "brass-lantern",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.088,
+        "predicted": 0
+      },
+      {
+        "codename": "night-orbit",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.079,
+        "predicted": 0
+      },
+      {
+        "codename": "ember-juniper",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1165,
+        "predicted": 0
+      },
+      {
+        "codename": "flint-whisper",
+        "type": "frequency_bias",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 1.0,
+        "predicted": 1
+      },
+      {
+        "codename": "larch-orbit",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1112,
+        "predicted": 0
+      },
+      {
+        "codename": "thorn-tide",
+        "type": "weak_avalanche",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.5246,
+        "predicted": 1
+      },
+      {
+        "codename": "flint-summit",
+        "type": "frequency_bias",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.8761,
+        "predicted": 1
+      },
+      {
+        "codename": "quartz-glacier",
+        "type": "frequency_bias",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9968,
+        "predicted": 1
+      },
+      {
+        "codename": "azure-beacon",
+        "type": "frequency_bias",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9931,
+        "predicted": 1
+      },
+      {
+        "codename": "umbra-mirror",
+        "type": "clean",
+        "output_bits": 64,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.0949,
+        "predicted": 0
+      },
+      {
+        "codename": "moss-orbit",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0623,
+        "predicted": 0
+      },
+      {
+        "codename": "flint-cipher",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.059,
+        "predicted": 0
+      },
+      {
+        "codename": "ghost-vault",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0507,
+        "predicted": 0
+      },
+      {
+        "codename": "haze-beacon",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0576,
+        "predicted": 0
+      },
+      {
+        "codename": "larch-mirror",
+        "type": "frequency_bias",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9931,
+        "predicted": 1
+      },
+      {
+        "codename": "moss-vault",
+        "type": "weak_avalanche",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.991,
+        "predicted": 1
+      },
+      {
+        "codename": "brass-nexus",
+        "type": "weak_avalanche",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9266,
+        "predicted": 1
+      },
+      {
+        "codename": "amber-cipher",
+        "type": "bit_correlation",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.8459,
+        "predicted": 1
+      },
+      {
+        "codename": "knot-mirror",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0596,
+        "predicted": 0
+      },
+      {
+        "codename": "zinc-harbor",
+        "type": "frequency_bias",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.8832,
+        "predicted": 1
+      },
+      {
+        "codename": "amber-echo",
+        "type": "clean",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0565,
+        "predicted": 0
+      },
+      {
+        "codename": "pearl-prism",
+        "type": "weak_avalanche",
+        "output_bits": 128,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.8998,
+        "predicted": 1
+      },
+      {
+        "codename": "jade-raven",
+        "type": "bit_correlation",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9686,
+        "predicted": 1
+      },
+      {
+        "codename": "umbra-kestrel",
+        "type": "weak_avalanche",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.4023,
+        "predicted": 1
+      },
+      {
+        "codename": "rust-beacon",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1393,
+        "predicted": 0
+      },
+      {
+        "codename": "larch-lantern",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1166,
+        "predicted": 0
+      },
+      {
+        "codename": "rust-harbor",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1287,
+        "predicted": 0
+      },
+      {
+        "codename": "thorn-delta",
+        "type": "weak_avalanche",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9459,
+        "predicted": 1
+      },
+      {
+        "codename": "dusk-prism",
+        "type": "bit_correlation",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9574,
+        "predicted": 1
+      },
+      {
+        "codename": "zinc-iris",
+        "type": "weak_avalanche",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.4668,
+        "predicted": 1
+      },
+      {
+        "codename": "umbra-nexus",
+        "type": "clean",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 0,
+        "probability": 0.1353,
+        "predicted": 0
+      },
+      {
+        "codename": "rust-raven",
+        "type": "frequency_bias",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.9804,
+        "predicted": 1
+      },
+      {
+        "codename": "vale-whisper",
+        "type": "bit_correlation",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.8577,
+        "predicted": 1
+      },
+      {
+        "codename": "pearl-cipher",
+        "type": "subset_leak",
+        "output_bits": 160,
+        "n_samples": 2000,
+        "label": 1,
+        "probability": 0.8898,
+        "predicted": 1
+      },
+      {
+        "codename": "vale-vault",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0524,
+        "predicted": 0
+      },
+      {
+        "codename": "thorn-mirror",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.067,
+        "predicted": 0
+      },
+      {
+        "codename": "wren-quarry",
+        "type": "bit_correlation",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.8894,
+        "predicted": 1
+      },
+      {
+        "codename": "onyx-anvil",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0707,
+        "predicted": 0
+      },
+      {
+        "codename": "coral-beacon",
+        "type": "weak_avalanche",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9834,
+        "predicted": 1
+      },
+      {
+        "codename": "rust-harbor",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0729,
+        "predicted": 0
+      },
+      {
+        "codename": "dusk-prism",
+        "type": "frequency_bias",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.924,
+        "predicted": 1
+      },
+      {
+        "codename": "quartz-vault",
+        "type": "weak_avalanche",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.984,
+        "predicted": 1
+      },
+      {
+        "codename": "iron-vault",
+        "type": "clean",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 0,
+        "probability": 0.0633,
+        "predicted": 0
+      },
+      {
+        "codename": "brass-orbit",
+        "type": "subset_leak",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.8338,
+        "predicted": 1
+      },
+      {
+        "codename": "vale-iris",
+        "type": "subset_leak",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.8527,
+        "predicted": 1
+      },
+      {
+        "codename": "onyx-iris",
+        "type": "bit_correlation",
+        "output_bits": 256,
+        "n_samples": 10000,
+        "label": 1,
+        "probability": 0.9889,
+        "predicted": 1
+      }
+    ]
+  }
+}

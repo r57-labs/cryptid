@@ -1,0 +1,15 @@
+$ python cryptid.py test -a jenkins -n 5000 --level standard
+  Generating 5,000 test vectors...
+  Phase 1: Statistical Suite
+  ────────────────────────────────────────
+  Bit correlation           marginal (signal: 0.000)
+  Output entropy            clean (signal: 0.000)
+  Inter-record distance     clean (signal: 0.000)
+  Multi-byte interaction    clean (signal: 0.000)
+  Meta-learner              P(weakened) = 0.076  (threshold 0.40)
+  Phase 2: Differential Profile
+  ────────────────────────────────────────
+  Single-bit differential   SIGNAL (signal: 1.000)
+  Bit independence          SIGNAL (signal: 0.665)
+  ────────────────────────────────────────
+  Verdict: FAIL  —  Anomalies detected in: differential

@@ -11,6 +11,7 @@ Supports three input modes:
 import json
 import os
 import random
+import re
 import string
 import subprocess
 import sys
@@ -65,15 +66,54 @@ def load_hex_pairs(filepath: str) -> list[dict]:
     return records
 
 
-def _parse_hash_output(raw: str) -> str:
-    """Normalize a single hash output line.
+_HEX_TOKEN = re.compile(r"[0-9a-fA-F]{8,}")
 
-    Handles common formats like "(stdin)= abc123..." or "SHA256(stdin)= abc123...".
+
+def _parse_hash_output(raw: str) -> str:
+    """Normalize a single hash output line to a bare lowercase hex digest.
+
+    Handles the common tool formats:
+      "abc123..."                      (bare digest)
+      "SHA2-256(stdin)= abc123..."     (openssl dgst)
+      "abc123...  -"                   (sha256sum / shasum)
+      "0xabc123..."
+    The digest is taken to be the longest run of 8+ hex characters.
     """
     out = raw.strip()
     if "=" in out:
         out = out.split("=")[-1].strip()
-    return out
+    tokens = _HEX_TOKEN.findall(out)
+    if tokens:
+        return max(tokens, key=len).lower()
+    return out.lower()
+
+
+def generate_plaintexts(n_samples: int, rng: random.Random, input_bytes: int = 10) -> list[str]:
+    """The toolkit's standard mixed input distribution for record-based tests.
+
+    50% hex strings of input_bytes random bytes, 30% lowercase pseudo-words
+    of 3-15 letters, 20% zero-padded counters. The statistical suite's
+    features (length parity, first character, byte sums) are defined on
+    this text; the message a hash function sees is its UTF-8 encoding.
+    """
+    plaintexts = []
+    for i in range(n_samples):
+        r = rng.random()
+        if r < 0.5:
+            plaintexts.append(bytes(rng.randint(0, 255) for _ in range(input_bytes)).hex())
+        elif r < 0.8:
+            length = rng.randint(3, 15)
+            plaintexts.append("".join(rng.choice(string.ascii_lowercase) for _ in range(length)))
+        else:
+            plaintexts.append(f"counter_{i:010d}")
+    return plaintexts
+
+
+def _message_bytes(message) -> bytes:
+    """Text is hashed as UTF-8; bytes are hashed as-is."""
+    if isinstance(message, (bytes, bytearray, memoryview)):
+        return bytes(message)
+    return str(message).encode("utf-8")
 
 
 def generate_from_command(
@@ -84,33 +124,33 @@ def generate_from_command(
 ) -> list[dict]:
     """Generate test data by invoking a shell command.
 
-    The command receives hex-encoded random input on stdin and should output
-    the corresponding hex-encoded hash on stdout. Each input is sent as a
-    separate invocation to ensure compatibility with standard tools like
-    OpenSSL that don't natively process line-separated streams.
+    The command receives each message on stdin and should print its hex
+    digest on stdout. Messages are the toolkit's standard text inputs (see
+    generate_plaintexts); the command sees their UTF-8 bytes with no
+    trailing newline -- the same bytes the built-in algorithms hash, and
+    the same convention make_hash_fn_from_command uses for the
+    chosen-input tiers, so every phase of an audit tests one function.
+
+    Batch mode (all messages at once, newline-separated) is tried first
+    for line-oriented tools; tools that hash all of stdin as one message
+    (openssl dgst, sha256sum, ...) fall back to one invocation per message.
 
     Example commands:
       "openssl dgst -sha256 -hex"
       "./my_hash_tool"
     """
     rng = random.Random(42)
-    inputs = []
-    for _ in range(n_samples):
-        data = bytes(rng.randint(0, 255) for _ in range(input_bytes))
-        inputs.append(data.hex())
+    inputs = generate_plaintexts(n_samples, rng, input_bytes)
 
     if verbose:
         print(f"  Generating {n_samples:,} samples via command: {command}")
 
-    # First, try batch mode (all inputs at once) — this is much faster for
-    # tools that support line-separated streaming.
     records = _try_batch_command(command, inputs)
     if records is not None:
         if verbose:
             print(f"  Batch mode succeeded ({n_samples:,} samples)")
         return records
 
-    # Fall back to per-input invocation — slower but works with any command.
     if verbose:
         print(f"  Batch mode failed, falling back to per-input invocation...")
 
@@ -123,9 +163,8 @@ def generate_from_command(
             result = subprocess.run(
                 command,
                 shell=True,
-                input=inp + "\n",
+                input=_message_bytes(inp),
                 capture_output=True,
-                text=True,
                 timeout=10,
             )
         except subprocess.TimeoutExpired:
@@ -134,10 +173,10 @@ def generate_from_command(
         if result.returncode != 0:
             raise RuntimeError(
                 f"Command failed on input {i + 1} (exit {result.returncode}): "
-                f"{result.stderr[:200]}"
+                f"{result.stderr.decode(errors='replace')[:200]}"
             )
 
-        out = _parse_hash_output(result.stdout)
+        out = _parse_hash_output(result.stdout.decode(errors="replace"))
         if not out:
             raise RuntimeError(f"Command produced empty output for input {i + 1}")
 
@@ -208,23 +247,24 @@ def make_hash_fn_from_records(records: list[dict]) -> Callable:
 def make_hash_fn_from_command(command: str) -> Callable:
     """Create a hash function from a shell command.
 
-    The command receives plaintext on stdin and outputs hex hash on stdout.
-    Much slower than in-process hashing, but works with any external implementation.
+    The returned callable accepts text (sent as UTF-8) or raw bytes (sent
+    as-is), writes the message to the command's stdin with no trailing
+    newline, and returns the hex digest parsed from stdout. One process per
+    call, so this is much slower than in-process hashing.
     """
-    def hash_fn(plaintext: str) -> str:
+    def hash_fn(message) -> str:
         result = subprocess.run(
             command,
             shell=True,
-            input=plaintext,
+            input=_message_bytes(message),
             capture_output=True,
-            text=True,
             timeout=10,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"Hash command failed: {result.stderr[:200]}")
-        out = result.stdout.strip()
-        if "=" in out:
-            out = out.split("=")[-1].strip()
+            raise RuntimeError(f"Hash command failed: {result.stderr.decode(errors='replace')[:200]}")
+        out = _parse_hash_output(result.stdout.decode(errors="replace"))
+        if not out:
+            raise RuntimeError("Hash command produced empty output")
         return out
 
     hash_fn._is_precomputed = False
@@ -283,32 +323,82 @@ def detect_input_format(filepath: str) -> str:
     return "unknown"
 
 
+class InputFormatError(ValueError):
+    """Raised when an input file cannot be used as-is."""
+
+
+def validate_records(records: list[dict], source: str = "input") -> list[dict]:
+    """Normalize digests and reject files the analysis cannot interpret.
+
+    Digests are lower-cased and any 0x prefix removed. Every digest must be
+    hex and all digests must have the same length: an output width is
+    inferred from the records, and a file mixing lengths is almost always a
+    wrapper that forgot to zero-pad (format(x, "x") instead of "064x").
+    Such a file used to run anyway and produced a spurious WARN, because
+    the truncated digests distort the inter-record distance and entropy
+    features.
+    """
+    if not records:
+        raise InputFormatError(f"{source}: no usable records")
+
+    lengths = {}
+    for rec in records:
+        h = rec["hash"].strip().lower()
+        if h.startswith("0x"):
+            h = h[2:]
+        try:
+            int(h, 16)
+        except ValueError:
+            raise InputFormatError(
+                f"{source}: digest is not hex: {rec['hash'][:40]!r}"
+            )
+        if len(h) % 2:
+            raise InputFormatError(
+                f"{source}: digest has an odd number of hex characters ({len(h)}): {h[:40]!r}"
+            )
+        rec["hash"] = h
+        lengths[len(h)] = lengths.get(len(h), 0) + 1
+
+    if len(lengths) > 1:
+        detail = ", ".join(f"{n} records x {l} hex chars" for l, n in sorted(lengths.items(), reverse=True))
+        raise InputFormatError(
+            f"{source}: inconsistent digest lengths ({detail}). "
+            f"Zero-pad every digest to the hash's full width "
+            f"(e.g. format(value, '064x') for 256 bits) and re-run."
+        )
+
+    return records
+
+
 def load_input(filepath: str, format: Optional[str] = None) -> list[dict]:
-    """Load input data from file, auto-detecting format if needed."""
+    """Load input data from file, auto-detecting format if needed.
+
+    Raises InputFormatError (a ValueError) if the file cannot be parsed or
+    its digests are inconsistent -- see validate_records.
+    """
     if format is None:
         format = detect_input_format(filepath)
 
     if format == "jsonl":
-        return load_jsonl(filepath)
+        records = load_jsonl(filepath)
     elif format == "hex_pairs":
-        return load_hex_pairs(filepath)
+        records = load_hex_pairs(filepath)
     else:
         # Try JSONL first, fall back to hex pairs
+        records = []
         try:
             records = load_jsonl(filepath)
-            if records:
-                return records
         except Exception:
             pass
+        if not records:
+            try:
+                records = load_hex_pairs(filepath)
+            except Exception:
+                pass
+        if not records:
+            raise InputFormatError(
+                f"Could not parse {filepath}. Expected JSONL (with plaintext/hash fields) "
+                f"or space-separated hex pairs."
+            )
 
-        try:
-            records = load_hex_pairs(filepath)
-            if records:
-                return records
-        except Exception:
-            pass
-
-        raise ValueError(
-            f"Could not parse {filepath}. Expected JSONL (with plaintext/hash fields) "
-            f"or space-separated hex pairs."
-        )
+    return validate_records(records, source=os.path.basename(filepath))

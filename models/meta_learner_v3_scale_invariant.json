@@ -121,7 +121,7 @@
       "weight": 0.21123916489968633
     },
     {
-      "feature": "avalanche_stdev_ratio",
+      "feature": "record_distance_stdev_ratio",
       "weight": 0.20663864339437416
     },
     {
@@ -161,7 +161,7 @@
       "weight": -0.05114271188041835
     },
     {
-      "feature": "avalanche_deviation",
+      "feature": "record_distance_deviation",
       "weight": 0.015908786719356274
     },
     {
@@ -169,7 +169,7 @@
       "weight": 0.015817911566551573
     },
     {
-      "feature": "avalanche",
+      "feature": "record_distance",
       "weight": -0.0006749959468371287
     }
   ],

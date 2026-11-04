@@ -8,7 +8,12 @@ By measuring how a 1-bit input change propagates through the internal state,
 we can detect structural weaknesses that are invisible to output analysis.
 
 A well-designed hash should reach ~50% state bit diffusion (Hamming distance
-≈ state_bits/2) within a few rounds. A weak hash may:
+≈ state_bits/2) within a few rounds of a difference entering the state.
+Because Merkle-Damgard designs absorb one message word per round while a
+sponge absorbs the whole block at once, curves are reported both by absolute
+round number and aligned on the round the flipped word is injected (see
+injection_round); only the aligned numbers compare mixing speed across
+designs. A weak hash may:
   - Diffuse slowly (many rounds before reaching 50%)
   - Diffuse unevenly (some state bits never affected)
   - Have "differential paths" where certain input changes propagate predictably
@@ -600,12 +605,16 @@ def sha3_256_instrumented(message: bytes) -> dict:
     capacity = 512 // 8  # 64 bytes
     output_len = 32  # 256 bits
 
-    # Padding (SHA-3 uses domain separation + pad10*1)
+    # Padding: SHA-3 domain separation bits (01) + pad10*1, i.e. append 0x06,
+    # zero-fill to the end of the block, and OR 0x80 into the block's last
+    # byte. When the message is rate-1 bytes long the 0x06 and 0x80 share a
+    # byte (0x86); an earlier revision appended a whole extra block in that
+    # case and produced a wrong digest for messages of exactly 135 bytes.
     msg = bytearray(message)
-    msg.append(0x06)  # SHA-3 domain separation
-    while len(msg) % rate != (rate - 1):
+    msg.append(0x06)
+    while len(msg) % rate != 0:
         msg.append(0x00)
-    msg.append(0x80)
+    msg[-1] |= 0x80
 
     # Initialize state (25 x 64-bit lanes = 1600 bits)
     state = [0] * 25
@@ -642,6 +651,30 @@ def sha3_256_instrumented(message: bytes) -> dict:
 # ============================================================
 # Diffusion Curve Analysis
 # ============================================================
+
+def injection_round(algo_name: str, flip_pos: int) -> int:
+    """First round at which a flipped message bit can touch the working state.
+
+    Merkle-Damgard compression functions consume one message word per round
+    for the first 16 rounds, so a flip in word k first changes the state
+    recorded after round k (index k+1 in round_states). SM3 additionally
+    folds W[j+4] into round j via W'[j] = W[j] ^ W[j+4], so word k first
+    enters at round max(0, k-4). The Keccak sponge XORs the whole block into
+    the state before round 1, so every bit enters at round 0.
+
+    Comparing diffusion at an absolute round number across these designs
+    conflates "how fast does the round function mix" with "when was the word
+    absorbed" -- at round 5 of SHA-256 most of a 55-byte message has not
+    entered the state at all. Aligning on this value removes that artifact.
+    """
+    if algo_name == "sha3_256":
+        return 0
+    word_bits = 64 if algo_name == "sha512" else 32
+    word = flip_pos // word_bits
+    if algo_name == "sm3":
+        return max(0, word - 4)
+    return word
+
 
 ALGORITHMS = {
     "md5": {"fn": md5_instrumented, "state_bits": 128, "n_rounds": 64},
@@ -692,6 +725,10 @@ def compute_diffusion_curve(
 
     # For each sample: generate random input, flip one bit, compare round states
     round_hds = [[] for _ in range(n_rounds + 1)]  # index 0 = initial state
+    # Same distances re-indexed by rounds of mixing since the flipped word
+    # entered the state (m = r - injection_round); index 0 = the last state
+    # before injection, which is always identical.
+    aligned_hds = [[] for _ in range(n_rounds + 1)]
 
     for sample in range(n_samples):
         # Random input
@@ -700,6 +737,7 @@ def compute_diffusion_curve(
         # Random bit to flip
         flip_pos = rng.randint(0, input_bytes * 8 - 1)
         inp_flipped = flip_bit_in_bytes(inp, flip_pos)
+        inj = injection_round(algo_name, flip_pos)
 
         # Compute both hashes with instrumentation
         result1 = hash_fn(inp)
@@ -714,6 +752,9 @@ def compute_diffusion_curve(
             bits2 = bits_of_state(states2[r], word_bits=word_bits)
             hd = hamming_distance_bits(bits1, bits2)
             round_hds[r].append(hd)
+            m = r - inj
+            if 0 <= m <= n_rounds:
+                aligned_hds[m].append(hd)
 
     if verbose:
         print(f" done")
@@ -767,6 +808,22 @@ def compute_diffusion_curve(
     last_quarter = [c["normalized"] for c in curve[3 * n_rounds // 4:]]
     uniformity = 1.0 - (max(last_quarter) - min(last_quarter)) if last_quarter else 0
 
+    # Injection-aligned curve and metrics (the fair cross-design comparison)
+    aligned = []
+    for m in range(n_rounds + 1):
+        if not aligned_hds[m]:
+            continue
+        mean_hd = sum(aligned_hds[m]) / len(aligned_hds[m])
+        aligned.append({
+            "rounds_since_injection": m,
+            "mean_hd": round(mean_hd, 2),
+            "normalized": round(mean_hd / ideal_hd, 4) if ideal_hd > 0 else 0,
+            "n": len(aligned_hds[m]),
+        })
+    aligned_norm = {a["rounds_since_injection"]: a["normalized"] for a in aligned}
+    aligned_to_50 = next((m for m in sorted(aligned_norm) if aligned_norm[m] >= 0.5), None)
+    aligned_to_90 = next((m for m in sorted(aligned_norm) if aligned_norm[m] >= 0.9), None)
+
     return {
         "algorithm": algo_name,
         "n_samples": n_samples,
@@ -778,6 +835,12 @@ def compute_diffusion_curve(
         "final_normalized_diffusion": round(final_normalized, 4),
         "diffusion_uniformity": round(uniformity, 4),
         "curve": curve,
+        # Aligned on the round the flipped word enters the state:
+        "aligned_rounds_to_50pct": aligned_to_50,
+        "aligned_rounds_to_90pct": aligned_to_90,
+        "aligned_at_3": aligned_norm.get(3),
+        "aligned_at_5": aligned_norm.get(5),
+        "aligned_curve": aligned,
     }
 
 
@@ -788,8 +851,13 @@ def print_diffusion_report(result: dict):
     print(f"  DIFFUSION CURVE — {algo.upper()}")
     print(f"  {'='*65}")
     print(f"  State: {result['state_bits']} bits, {result['n_rounds']} rounds")
-    print(f"  Rounds to 50% diffusion: {result['rounds_to_50pct']}")
-    print(f"  Rounds to 90% diffusion: {result['rounds_to_90pct']}")
+    print(f"  Absolute rounds to 50% / 90% diffusion: {result['rounds_to_50pct']} / {result['rounds_to_90pct']}"
+          f"   (includes rounds before the flipped word is absorbed)")
+    print(f"  Rounds after injection to 50% / 90%:     {result['aligned_rounds_to_50pct']} / {result['aligned_rounds_to_90pct']}"
+          f"   (round-function mixing speed)")
+    a3, a5 = result.get("aligned_at_3"), result.get("aligned_at_5")
+    print(f"  Diffusion 3 / 5 rounds after injection:  "
+          f"{(a3 or 0) * 100:.1f}% / {(a5 or 0) * 100:.1f}%")
     print(f"  Final normalized diffusion: {result['final_normalized_diffusion']:.4f}")
     print(f"  Diffusion uniformity: {result['diffusion_uniformity']:.4f}")
 
@@ -827,16 +895,22 @@ def compare_algorithms(
     print(f"\n  {'='*65}")
     print(f"  DIFFUSION COMPARISON SUMMARY")
     print(f"  {'='*65}")
-    print(f"\n  {'Algorithm':<12} {'State':>6} {'Rnds':>5} {'→50%':>5} {'→90%':>5} {'Final':>7} {'Uniform':>8}")
-    print(f"  {'-'*55}")
+    print(f"\n  {'Algorithm':<12} {'State':>6} {'Rnds':>5} | {'abs→50%':>7} {'abs→90%':>7} | "
+          f"{'inj→50%':>7} {'inj→90%':>7} {'@+3':>6} {'@+5':>6} | {'Final':>6}")
+    print(f"  {'-'*90}")
 
     for algo_name in algorithms:
         if algo_name not in results:
             continue
         r = results[algo_name]
-        print(f"  {algo_name:<12} {r['state_bits']:>5}b {r['n_rounds']:>5} "
-              f"{r['rounds_to_50pct']:>5} {r['rounds_to_90pct']:>5} "
-              f"{r['final_normalized_diffusion']:>6.3f} {r['diffusion_uniformity']:>7.3f}")
+        a3 = (r.get('aligned_at_3') or 0) * 100
+        a5 = (r.get('aligned_at_5') or 0) * 100
+        print(f"  {algo_name:<12} {r['state_bits']:>5}b {r['n_rounds']:>5} | "
+              f"{r['rounds_to_50pct']:>7} {r['rounds_to_90pct']:>7} | "
+              f"{str(r['aligned_rounds_to_50pct']):>7} {str(r['aligned_rounds_to_90pct']):>7} "
+              f"{a3:>5.1f}% {a5:>5.1f}% | {r['final_normalized_diffusion']:>6.3f}")
+    print("\n  abs = absolute round number (depends on when the flipped message word is absorbed);")
+    print("  inj = rounds after the flipped word enters the state (round-function mixing speed).")
 
     return results
 

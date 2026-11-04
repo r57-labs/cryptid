@@ -11,16 +11,19 @@ Tests performed:
      whether they are correlated beyond chance (chi-squared).
   2. Output entropy: measure per-byte and per-bit entropy of hash outputs.
      A perfect hash should have maximum entropy.
-  3. Avalanche analysis: for pairs of similar inputs (1-bit difference),
-     measure how many output bits change. Should be ~50% (half the bits).
+  3. Inter-record distance: Hamming distance between the digests of
+     consecutive (unrelated) records. Should be ~50% of the output width.
+     (Not an avalanche test -- see differential_profile.single_bit_differential.)
   4. Frequency analysis: chi-squared test on output byte value distributions,
      conditioned on input features.
   5. Mutual information estimate: permutation-tested MI between input and
      output byte subsequences. Uses shuffled null distribution instead of
      analytical bias correction (which fails at large N).
-  6. Multi-byte interaction: tests XOR/sum/parity of all input byte pairs
-     and triples against each output bit. Catches subset_leak-style
-     weaknesses that single-feature tests miss.
+  6. Multi-byte interaction: tests parity/high/low bits of each of the
+     first 10 input bytes, XOR/sum features of all pairs among them, and XOR
+     features of triples among the first 8, against the first 32 output
+     bits. Catches subset_leak-style weaknesses that single-feature tests
+     miss.
 
 Each test produces a signal_strength score (0.0 = no anomaly, higher = stronger).
 A composite confidence score combines all tests with weighting.
@@ -76,59 +79,99 @@ def text_to_bits(text: str, n_bytes: int = 8) -> list[int]:
     return bits
 
 
+# --- Bitset helpers ---
+#
+# Several tests compare binary input features against binary output bits
+# over all records. Packing each column as one Python int (record s at bit
+# s) turns each 2x2 contingency table into three popcounts, which is what
+# lets the suite cover every input and output bit instead of a window.
+
+def _pack_columns(rows: list[list[int]], n_cols: int) -> list[int]:
+    """rows[s][b] in {0,1} -> list of n_cols ints with bit s set iff rows[s][b]."""
+    cols = [0] * n_cols
+    for s_idx, row in enumerate(rows):
+        bit = 1 << s_idx
+        for b in range(min(n_cols, len(row))):
+            if row[b]:
+                cols[b] |= bit
+    return cols
+
+
+def _pack_feature(values: list[int]) -> int:
+    """Binary feature values per record -> packed int column."""
+    v = 0
+    for s_idx, x in enumerate(values):
+        if x & 1:
+            v |= 1 << s_idx
+    return v
+
+
+def _chi2_phi_2x2(col_a: int, col_b: int, n: int):
+    """Chi-squared and phi for two packed binary columns over n records.
+
+    Returns (chi2, phi, counts) or None when a marginal is empty (the test is
+    undefined for a constant column).
+    """
+    n11 = (col_a & col_b).bit_count()
+    na = col_a.bit_count()
+    nb = col_b.bit_count()
+    n10 = na - n11
+    n01 = nb - n11
+    n00 = n - na - n01
+    row_totals = (n - na, na)
+    col_totals = (n - nb, nb)
+    if min(row_totals) == 0 or min(col_totals) == 0:
+        return None
+    counts = [[n00, n01], [n10, n11]]
+    chi2 = 0.0
+    for r_idx in range(2):
+        for c_idx in range(2):
+            expected = row_totals[r_idx] * col_totals[c_idx] / n
+            chi2 += (counts[r_idx][c_idx] - expected) ** 2 / expected
+    phi = (n00 * n11 - n01 * n10) / math.sqrt(row_totals[0] * row_totals[1] * col_totals[0] * col_totals[1])
+    return chi2, phi, counts
+
+
 # --- Test 1: Bit Correlation Matrix ---
 
 def bit_correlation_analysis(
     records: list[dict],
-    input_bytes: int = 4,
+    input_bytes: int = 10,
     verbose: bool = False,
 ) -> dict:
     """
-    For each (input_bit, output_bit) pair, compute correlation and
-    chi-squared statistic. Detect signal via:
+    For each (input_bit, output_bit) pair -- input bits are the first
+    input_bytes*8 (default 80, i.e. the whole generated message) bits of the
+    UTF-8 plaintext, output bits are the full digest -- compute the
+    chi-squared statistic and phi coefficient. Detect signal via:
       - Max chi-squared (any single pair with extreme correlation)
       - Count of significant pairs vs expected by chance
+
+    (Earlier revisions scanned only the first 32 input bits; planted
+    correlations from input bits 32-39 were systematically missed.)
     """
     n_input_bits = input_bytes * 8
     n_output_bits = len(hex_to_bits(records[0]["hash"]))
     n = len(records)
 
-    # Pre-compute all bit vectors
-    input_bits_all = []
-    output_bits_all = []
-    for r in records:
-        input_bits_all.append(text_to_bits(r["plaintext"], input_bytes))
-        output_bits_all.append(hex_to_bits(r["hash"]))
+    input_cols = _pack_columns([text_to_bits(r["plaintext"], input_bytes) for r in records], n_input_bits)
+    output_cols = _pack_columns([hex_to_bits(r["hash"]) for r in records], n_output_bits)
 
     significant_pairs = []
     max_chi_sq = 0.0
     max_correlation = 0.0
-    all_chi_sq = []
+    chi_sq_sum = 0.0
+    n_evaluated = 0
 
     for i_bit in range(n_input_bits):
+        ci = input_cols[i_bit]
         for o_bit in range(n_output_bits):
-            counts = [[0, 0], [0, 0]]
-            for k in range(n):
-                iv = input_bits_all[k][i_bit] if i_bit < len(input_bits_all[k]) else 0
-                ov = output_bits_all[k][o_bit] if o_bit < len(output_bits_all[k]) else 0
-                counts[iv][ov] += 1
-
-            row_totals = [counts[0][0] + counts[0][1], counts[1][0] + counts[1][1]]
-            col_totals = [counts[0][0] + counts[1][0], counts[0][1] + counts[1][1]]
-
-            chi_sq = 0.0
-            for r_idx in range(2):
-                for c_idx in range(2):
-                    expected = row_totals[r_idx] * col_totals[c_idx] / n if n > 0 else 1
-                    if expected > 0:
-                        chi_sq += (counts[r_idx][c_idx] - expected) ** 2 / expected
-
-            denom = math.sqrt(
-                row_totals[0] * row_totals[1] * col_totals[0] * col_totals[1]
-            ) if all(x > 0 for x in row_totals + col_totals) else 1
-            phi = (counts[0][0] * counts[1][1] - counts[0][1] * counts[1][0]) / denom
-
-            all_chi_sq.append(chi_sq)
+            res = _chi2_phi_2x2(ci, output_cols[o_bit], n)
+            if res is None:
+                continue  # constant input bit (e.g. padding) or constant output bit
+            chi_sq, phi, counts = res
+            chi_sq_sum += chi_sq
+            n_evaluated += 1
 
             if chi_sq > max_chi_sq:
                 max_chi_sq = chi_sq
@@ -145,9 +188,9 @@ def bit_correlation_analysis(
                     "counts": counts,
                 })
 
-    mean_chi_sq = sum(all_chi_sq) / len(all_chi_sq) if all_chi_sq else 0
+    mean_chi_sq = chi_sq_sum / n_evaluated if n_evaluated else 0
     n_total_pairs = n_input_bits * n_output_bits
-    expected_significant = n_total_pairs * 0.001
+    expected_significant = n_evaluated * 0.001
 
     # Signal detection: use max chi-squared as primary indicator.
     # A single strongly correlated pair is enough — don't require many pairs.
@@ -169,6 +212,7 @@ def bit_correlation_analysis(
         "n_input_bits": n_input_bits,
         "n_output_bits": n_output_bits,
         "n_total_pairs": n_total_pairs,
+        "n_pairs_evaluated": n_evaluated,
         "n_samples": n,
         "mean_chi_squared": mean_chi_sq,
         "expected_mean_chi_squared": 1.0,
@@ -251,12 +295,21 @@ def entropy_analysis(records: list[dict]) -> dict:
     }
 
 
-# --- Test 3: Avalanche Analysis ---
+# --- Test 3: Inter-Record Distance ---
 
-def avalanche_analysis(records: list[dict], n_pairs: int = 2000) -> dict:
+def record_distance_analysis(records: list[dict], n_pairs: int = 2000) -> dict:
     """
-    For pairs of similar inputs (1-byte difference), measure how many
-    output bits change. Perfect avalanche: ~50% of bits flip.
+    Inter-record output distance: the Hamming distance between the digests
+    of consecutive records, which for a uniform output should be centred on
+    half the output width with the binomial standard deviation.
+
+    This is NOT an avalanche test. The records are unrelated inputs, so it
+    says nothing about how the output responds to a one-bit input change;
+    it is a cheap check that the output distribution is consistent across
+    the dataset. The empirical avalanche (Strict Avalanche Criterion) test
+    is single_bit_differential in differential_profile.py, which needs a
+    callable hash function. (Earlier revisions mislabelled this test
+    "avalanche".)
     """
     n_output_bits = len(hex_to_bits(records[0]["hash"]))
     n = min(n_pairs, len(records) - 1)
@@ -293,7 +346,7 @@ def avalanche_analysis(records: list[dict], n_pairs: int = 2000) -> dict:
         signal_strength = 0.0
 
     return {
-        "test": "avalanche",
+        "test": "record_distance",
         "n_pairs": n,
         "n_output_bits": n_output_bits,
         "mean_flip_ratio": mean_flip,
@@ -520,15 +573,23 @@ from itertools import combinations
 def interaction_analysis(
     records: list[dict],
     max_input_bytes: int = 10,
-    max_triple_bytes: int = 8,
-    n_output_bits: int = 32,
+    max_triple_bytes: int = 10,
+    n_output_bits: int = None,
 ) -> dict:
     """
     Detect multi-byte input interactions leaked into output bits.
 
-    For each pair and triple of input bytes, compute XOR/sum/parity
-    features and test whether any output bit is correlated with that
-    feature beyond chance (chi-squared test).
+    For each input byte (parity, high bit, low bit), each pair of input
+    bytes (low bit, high bit and full parity of the XOR; parity of the sum)
+    and each triple among the first max_triple_bytes (low bit, high bit and
+    full parity of the XOR), test whether any output bit is correlated with
+    that binary feature beyond chance (chi-squared on the 2x2 table).
+
+    The full-parity features were added after a held-out evaluation showed
+    the classifier missing leaks of parity(b_i ^ b_j ^ b_k): the low- and
+    high-bit features see one bit of the XOR, and single-byte parities are
+    independent of a multi-byte parity. Triples now range over all bytes
+    (the earlier limit of 8 missed any leak involving byte 9).
 
     This catches subset_leak-style weaknesses where a function of
     multiple input bytes is leaked into specific output bits — something
@@ -538,143 +599,82 @@ def interaction_analysis(
       max_input_bytes: how many input bytes to consider (capped by data)
       max_triple_bytes: only test triples among the first N bytes (keeps
                         C(N,3) manageable)
-      n_output_bits: how many output bits to test against
+      n_output_bits: how many output bits to test against (default: all;
+                     earlier revisions tested only the first 32)
     """
     n = len(records)
 
-    # Extract raw input/output bytes
     input_bytes_all = []
-    output_bits_all = []
+    output_rows = []
     for r in records:
-        pt = list(r["plaintext"].encode("utf-8"))
-        h = hex_to_bits(r["hash"])
-        # Pad input to max_input_bytes
-        pt = pt[:max_input_bytes]
+        pt = list(r["plaintext"].encode("utf-8"))[:max_input_bytes]
         pt += [0] * (max_input_bytes - len(pt))
         input_bytes_all.append(pt)
-        output_bits_all.append(h[:n_output_bits])
+        output_rows.append(hex_to_bits(r["hash"]))
 
-    actual_input_bytes = min(max_input_bytes, len(input_bytes_all[0]))
-    actual_output_bits = min(n_output_bits, len(output_bits_all[0]))
+    actual_input_bytes = max_input_bytes
+    full_output_bits = len(output_rows[0])
+    actual_output_bits = full_output_bits if n_output_bits is None else min(n_output_bits, full_output_bits)
+    output_cols = _pack_columns(output_rows, actual_output_bits)
 
     # Chi-squared threshold at p=0.001 for 1 df
     CHI2_THRESHOLD = 10.83
     # Stronger threshold for declaring "signal" given multiple testing
-    # With ~45 pairs × 3 ops × 32 bits = 4320 tests, expect ~4.3 by chance at p=0.001
     # Use chi2 > 30 (p < 1e-7) for individual hits, and require pattern
     STRONG_CHI2 = 30.0
 
-    def _test_feature_vs_bits(feature_values: list[int], label: str) -> list[dict]:
+    all_hits = []
+    strong_hits = []
+    n_tests = 0
+
+    def _test_feature_vs_bits(feature_values: list[int], label: str):
         """Test a binary feature against all output bits."""
-        hits = []
+        nonlocal n_tests
+        fcol = _pack_feature(feature_values)
         for o_bit in range(actual_output_bits):
-            counts = [[0, 0], [0, 0]]
-            for k in range(n):
-                fv = feature_values[k] & 1  # ensure binary
-                ov = output_bits_all[k][o_bit]
-                counts[fv][ov] += 1
-
-            row_totals = [counts[0][0] + counts[0][1], counts[1][0] + counts[1][1]]
-            col_totals = [counts[0][0] + counts[1][0], counts[0][1] + counts[1][1]]
-
-            if any(x == 0 for x in row_totals + col_totals):
+            n_tests += 1
+            res = _chi2_phi_2x2(fcol, output_cols[o_bit], n)
+            if res is None:
                 continue
-
-            expected = [[row_totals[r] * col_totals[c] / n for c in range(2)] for r in range(2)]
-            chi_sq = sum(
-                (counts[r][c] - expected[r][c]) ** 2 / expected[r][c]
-                for r in range(2) for c in range(2)
-                if expected[r][c] > 0
-            )
-
+            chi_sq, phi, _ = res
             if chi_sq > CHI2_THRESHOLD:
-                # Compute correlation strength
-                denom = math.sqrt(
-                    row_totals[0] * row_totals[1] * col_totals[0] * col_totals[1]
-                )
-                phi = (counts[0][0] * counts[1][1] - counts[0][1] * counts[1][0]) / denom
-                hits.append({
+                hit = {
                     "feature": label,
                     "output_bit": o_bit,
                     "chi_squared": chi_sq,
                     "phi_correlation": phi,
                     "strong": chi_sq > STRONG_CHI2,
-                })
-        return hits
+                }
+                all_hits.append(hit)
+                if hit["strong"]:
+                    strong_hits.append(hit)
 
-    all_hits = []
-    strong_hits = []
-
-    # --- Single-byte features (parity, high bit) ---
-    # Catches subset_leak with single input byte
+    # --- Single-byte features (parity, high bit, low bit) ---
     for i in range(actual_input_bytes):
-        # Byte parity (XOR of all bits)
-        parity_feature = [bin(input_bytes_all[k][i]).count('1') % 2 for k in range(n)]
-        hits = _test_feature_vs_bits(parity_feature, f"byte_parity({i})")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
+        _test_feature_vs_bits([bin(input_bytes_all[k][i]).count("1") % 2 for k in range(n)], f"byte_parity({i})")
+        _test_feature_vs_bits([input_bytes_all[k][i] >> 7 for k in range(n)], f"byte_high({i})")
+        _test_feature_vs_bits([input_bytes_all[k][i] & 1 for k in range(n)], f"byte_low({i})")
 
-        # High bit
-        high_feature = [input_bytes_all[k][i] >> 7 for k in range(n)]
-        hits = _test_feature_vs_bits(high_feature, f"byte_high({i})")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
-
-        # Low bit
-        low_feature = [input_bytes_all[k][i] & 1 for k in range(n)]
-        hits = _test_feature_vs_bits(low_feature, f"byte_low({i})")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
+    POPCOUNT_PARITY = [bin(v).count("1") & 1 for v in range(256)]
 
     # --- Pair interactions ---
-    byte_indices = list(range(actual_input_bytes))
-    pair_combos = list(combinations(byte_indices, 2))
-
+    pair_combos = list(combinations(range(actual_input_bytes), 2))
     for (i, j) in pair_combos:
-        # XOR of byte pair → parity bit
-        xor_feature = [input_bytes_all[k][i] ^ input_bytes_all[k][j] for k in range(n)]
-        xor_parity = [v & 1 for v in xor_feature]
-        hits = _test_feature_vs_bits(xor_parity, f"xor_pair({i},{j})_lsb")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
+        xor_vals = [input_bytes_all[k][i] ^ input_bytes_all[k][j] for k in range(n)]
+        _test_feature_vs_bits([v & 1 for v in xor_vals], f"xor_pair({i},{j})_lsb")
+        _test_feature_vs_bits([v >> 7 for v in xor_vals], f"xor_pair({i},{j})_msb")
+        _test_feature_vs_bits([POPCOUNT_PARITY[v] for v in xor_vals], f"xor_pair({i},{j})_parity")
+        _test_feature_vs_bits([(input_bytes_all[k][i] + input_bytes_all[k][j]) & 1 for k in range(n)],
+                              f"sum_pair({i},{j})_parity")
 
-        # Sum parity
-        sum_feature = [(input_bytes_all[k][i] + input_bytes_all[k][j]) & 1 for k in range(n)]
-        hits = _test_feature_vs_bits(sum_feature, f"sum_pair({i},{j})_parity")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
-
-        # XOR high bit
-        xor_high = [(input_bytes_all[k][i] ^ input_bytes_all[k][j]) >> 7 for k in range(n)]
-        hits = _test_feature_vs_bits(xor_high, f"xor_pair({i},{j})_msb")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
-
-    # --- Triple interactions (limited to first max_triple_bytes) ---
-    triple_indices = list(range(min(actual_input_bytes, max_triple_bytes)))
-    triple_combos = list(combinations(triple_indices, 3))
-
+    # --- Triple interactions ---
+    triple_combos = list(combinations(range(min(actual_input_bytes, max_triple_bytes)), 3))
     for (i, j, k_idx) in triple_combos:
-        # XOR of triple → parity bit
-        xor_feature = [
-            input_bytes_all[m][i] ^ input_bytes_all[m][j] ^ input_bytes_all[m][k_idx]
-            for m in range(n)
-        ]
-        xor_parity = [v & 1 for v in xor_feature]
-        hits = _test_feature_vs_bits(xor_parity, f"xor_triple({i},{j},{k_idx})_lsb")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
+        xor_vals = [input_bytes_all[m][i] ^ input_bytes_all[m][j] ^ input_bytes_all[m][k_idx] for m in range(n)]
+        _test_feature_vs_bits([v & 1 for v in xor_vals], f"xor_triple({i},{j},{k_idx})_lsb")
+        _test_feature_vs_bits([v >> 7 for v in xor_vals], f"xor_triple({i},{j},{k_idx})_msb")
+        _test_feature_vs_bits([POPCOUNT_PARITY[v] for v in xor_vals], f"xor_triple({i},{j},{k_idx})_parity")
 
-        # XOR high bit
-        xor_high = [(input_bytes_all[m][i] ^ input_bytes_all[m][j] ^ input_bytes_all[m][k_idx]) >> 7
-                     for m in range(n)]
-        hits = _test_feature_vs_bits(xor_high, f"xor_triple({i},{j},{k_idx})_msb")
-        all_hits.extend(hits)
-        strong_hits.extend(h for h in hits if h["strong"])
-
-    # Expected false positives at p=0.001
-    n_single_tests = actual_input_bytes * 3 * actual_output_bits  # 3 features per byte
-    n_tests = n_single_tests + len(pair_combos) * 3 * actual_output_bits + len(triple_combos) * 2 * actual_output_bits
     expected_hits_by_chance = n_tests * 0.001
     expected_strong_by_chance = n_tests * 1e-7  # chi2>30 ≈ p<1e-7
 
@@ -685,12 +685,9 @@ def interaction_analysis(
     has_many_strong = len(strong_hits) > max(expected_strong_by_chance * 10, 3)
     signal = has_extreme_hit or has_many_strong
 
-    # Signal strength: based on how many strong hits and how extreme
     if strong_hits:
         max_chi2 = max(h["chi_squared"] for h in strong_hits)
-        # Normalize: 0 at STRONG_CHI2 (30), 1.0 at very extreme (500+)
         chi2_strength = min(1.0, (max_chi2 - STRONG_CHI2) / 470)
-        # Also factor in count of strong hits
         count_strength = min(1.0, len(strong_hits) / 10)
         signal_strength = max(chi2_strength, count_strength) if signal else 0.0
     else:
@@ -725,7 +722,7 @@ def compute_composite_score(results: dict) -> dict:
       - frequency:       0.25 (strong discriminator of planted biases)
       - interaction:     0.20 (multi-byte input relationships — catches subset_leak)
       - entropy:         0.15 (catches output distribution anomalies)
-      - avalanche:       0.08 (catches diffusion weakness)
+      - record_distance: 0.08 (output distribution consistency)
       - mutual_info:     0.07 (general information-theoretic, permutation-calibrated)
 
     Score interpretation:
@@ -740,7 +737,7 @@ def compute_composite_score(results: dict) -> dict:
         "frequency": 0.25,
         "interaction": 0.20,
         "entropy": 0.15,
-        "avalanche": 0.08,
+        "record_distance": 0.08,
         "mutual_information": 0.07,
     }
 
@@ -749,7 +746,7 @@ def compute_composite_score(results: dict) -> dict:
         "frequency": results.get("frequency", {}),
         "interaction": results.get("interaction", {}),
         "entropy": results.get("entropy", {}),
-        "avalanche": results.get("avalanche", {}),
+        "record_distance": results.get("record_distance", {}),
         "mutual_information": results.get("mutual_information", {}),
     }
 
@@ -799,8 +796,8 @@ def run_full_analysis(records: list[dict], verbose: bool = True) -> dict:
     results["entropy"] = entropy_analysis(records)
 
     if verbose:
-        print("  Running avalanche analysis...")
-    results["avalanche"] = avalanche_analysis(records)
+        print("  Running inter-record distance analysis...")
+    results["record_distance"] = record_distance_analysis(records)
 
     if verbose:
         print("  Running conditional frequency analysis...")
@@ -857,10 +854,10 @@ def print_report(results: dict, label: str = ""):
     print(f"    Mean byte entropy:     {ent['mean_byte_entropy']:.4f} (ideal: 8.0)")
     print(f"    Signal: {'YES' if ent['signal'] else 'no'}")
 
-    # Avalanche
-    av = results["avalanche"]
+    # Inter-record distance
+    av = results["record_distance"]
     sig_str = f" (strength: {av['signal_strength']:.2f})" if av['signal'] else ""
-    print(f"\n  Avalanche:{sig_str}")
+    print(f"\n  Inter-record distance:{sig_str}")
     print(f"    Mean flip ratio:       {av['mean_flip_ratio']:.4f} (expected: 0.5)")
     print(f"    Stdev:                 {av['stdev_flip_ratio']:.4f} (expected ~{av['expected_stdev']:.4f})")
     print(f"    Signal: {'YES' if av['signal'] else 'no'}")
@@ -939,14 +936,14 @@ def main():
         print(f"\n{'='*80}")
         print("  SUMMARY TABLE")
         print(f"{'='*80}")
-        print(f"\n  {'Variant':<22} {'BitCorr':>8} {'Entropy':>8} {'Avalnch':>8} {'Freq':>8} {'MI':>8} {'Inter':>8} {'Score':>8}  {'Verdict'}")
+        print(f"\n  {'Variant':<22} {'BitCorr':>8} {'Entropy':>8} {'RecDist':>8} {'Freq':>8} {'MI':>8} {'Inter':>8} {'Score':>8}  {'Verdict'}")
         print(f"  {'-'*105}")
 
         for name, results in sorted(all_results.items(), key=lambda x: -x[1]["composite"]["composite_score"]):
             signals = results["overall"]["signals_detected"]
             comp = results["composite"]
             row = f"  {name:<22}"
-            for test in ["bit_correlation", "entropy", "avalanche", "frequency", "mutual_information", "interaction"]:
+            for test in ["bit_correlation", "entropy", "record_distance", "frequency", "mutual_information", "interaction"]:
                 strength = results.get(test, {}).get("signal_strength", 0.0)
                 if signals.get(test, False):
                     row += f" {strength:>7.2f}*"

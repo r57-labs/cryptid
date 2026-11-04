@@ -35,8 +35,8 @@ def _load_meta_learner(model_path: str) -> dict:
 def _find_default_model() -> Optional[str]:
     """Find the default meta-learner model file."""
     candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "meta_learner_v4.json"),
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "meta_learner_v3_scale_invariant.json"),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "models", "meta_learner.json"),
     ]
     for path in candidates:
         if os.path.exists(path):
@@ -174,18 +174,25 @@ class AuditResult:
 
     @property
     def verdict(self) -> str:
-        """Compute overall verdict: PASS, WARN, FAIL, or ERROR."""
-        if self.errors and not any([self.stats, self.meta_learner]):
+        """Compute overall verdict: PASS, WARN, FAIL, or ERROR.
+
+        Any phase that failed to run makes the verdict ERROR: a PASS must
+        mean every requested test ran and found nothing. (Signals found by
+        the phases that did run are still listed in signal_sources.)
+        """
+        if self.errors:
             return "ERROR"
 
         signals = []
 
-        # Meta-learner is the primary classifier (skip if it was gated)
+        # Meta-learner is the primary classifier (skip if it was gated).
+        # WARN at the model's decision threshold; FAIL well above it.
         if self.meta_learner and not self.meta_learner.get("skipped"):
             prob = self.meta_learner.get("probability", 0)
-            if prob >= 0.7:
+            threshold = self.meta_learner.get("threshold", 0.4)
+            if prob >= max(0.7, threshold):
                 signals.append(("meta_learner", "FAIL", prob))
-            elif prob >= 0.4:
+            elif prob >= threshold:
                 signals.append(("meta_learner", "WARN", prob))
 
         # Differential profile
@@ -221,7 +228,8 @@ class AuditResult:
     def signal_sources(self) -> list[str]:
         """List which test batteries detected anomalies."""
         sources = []
-        if self.meta_learner and not self.meta_learner.get("skipped") and self.meta_learner.get("probability", 0) >= 0.4:
+        if (self.meta_learner and not self.meta_learner.get("skipped")
+                and self.meta_learner.get("probability", 0) >= self.meta_learner.get("threshold", 0.4)):
             sources.append("statistical")
         if self.differential and self.differential.get("any_signal"):
             sources.append("differential")
@@ -256,7 +264,10 @@ class AuditResult:
             if isinstance(test_result, dict) and "signal_strength" in test_result:
                 summary[test_name] = {
                     "signal": test_result["signal_strength"],
-                    "detected": test_result.get("signal_detected", test_result["signal_strength"] > 0.1),
+                    # "detected" is the display threshold; "flagged" is the
+                    # test's own (looser) decision, which the meta-learner sees.
+                    "detected": test_result["signal_strength"] > 0.1,
+                    "flagged": bool(test_result.get("signal", False)),
                 }
         return summary
 
@@ -359,7 +370,7 @@ def run_audit(
                         result.meta_learner = run_meta_learner(result.stats, model, verbose=verbose)
                         if verbose:
                             prob = result.meta_learner.get("probability", 0)
-                            label = result.meta_learner.get("predicted_label", "?")
+                            label = result.meta_learner.get("label", "?")
                             print(f"\n  Meta-learner: P(weakened) = {prob:.3f} → {label}")
                     except Exception as e:
                         result.errors.append(f"Meta-learner error: {e}")

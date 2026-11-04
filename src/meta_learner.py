@@ -64,7 +64,7 @@ FEATURE_NAMES = [
     # Signal strengths (6 features) — already scale-independent
     "bit_correlation",
     "entropy",
-    "avalanche",
+    "record_distance",          # was "avalanche": inter-record distance, not an avalanche test
     "frequency",
     "mutual_information",
     "interaction",
@@ -74,20 +74,29 @@ FEATURE_NAMES = [
     "bit_corr_n_sig_frac",       # n_significant / total_pairs
     "entropy_min_bit",           # 0-1, doesn't scale with N
     "entropy_min_byte",          # 0-8, doesn't scale with N
-    "avalanche_deviation",       # proportion, doesn't scale with N
-    "avalanche_stdev_ratio",     # ratio, doesn't scale with N
+    "record_distance_deviation", # proportion, doesn't scale with N
+    "record_distance_stdev_ratio",  # ratio, doesn't scale with N
     "freq_max_chi2_norm",        # max_chi2 / n_samples
     "mi_real_norm",              # MI / log2(n_samples) (MI grows with N)
     "mi_threshold_norm",         # threshold / log2(n_samples)
     "interaction_n_strong_frac", # n_strong / n_total_tests
     "interaction_n_hits_frac",   # n_hits / n_total_tests
-    # Width + scale context (5 features)
+    # Width + scale context (5 features; the last three are exact duplicates
+    # of features 8, 16 and 17 above, kept so the shipped 23-weight model
+    # keeps loading -- the vector has 20 distinct features)
     "output_bits",               # raw width (64, 128, 160, 256, 512)
     "log_n_samples",             # log2(n_samples) — lets model know the scale
-    "bit_corr_n_sig_width_norm", # n_significant / (n_input_bits * n_output_bits)
-    "interaction_n_strong_norm", # same as frac above, kept for back-compat naming
-    "interaction_n_hits_norm",   # same as frac above, kept for back-compat naming
+    "bit_corr_n_sig_width_norm", # duplicate of bit_corr_n_sig_frac
+    "interaction_n_strong_norm", # duplicate of interaction_n_strong_frac
+    "interaction_n_hits_norm",   # duplicate of interaction_n_hits_frac
 ]
+
+
+def _get_test(stats_results: dict, name: str) -> dict:
+    """Fetch one test's results; accepts the pre-rename key for old stats files."""
+    if name == "record_distance" and name not in stats_results:
+        return stats_results.get("avalanche", {})
+    return stats_results.get(name, {})
 
 
 def extract_features_from_stats(stats_results: dict) -> list[float]:
@@ -98,7 +107,7 @@ def extract_features_from_stats(stats_results: dict) -> list[float]:
     - Chi-squared values divided by n_samples (chi2 scales linearly with N)
     - Count-based features divided by total tests
     - MI divided by log2(n_samples) (MI grows logarithmically)
-    - Phi coefficient, entropy, avalanche deviation already scale-independent
+    - Phi coefficient, entropy, record-distance deviation already scale-independent
 
     This ensures the meta-learner works correctly regardless of sample size
     (2K, 10K, 100K, etc.) without retraining.
@@ -117,9 +126,9 @@ def extract_features_from_stats(stats_results: dict) -> list[float]:
     log_n = math.log2(max(n_samples, 2))
 
     # Signal strengths (6 features) — already scale-independent
-    for test_name in ["bit_correlation", "entropy", "avalanche", "frequency",
+    for test_name in ["bit_correlation", "entropy", "record_distance", "frequency",
                        "mutual_information", "interaction"]:
-        test = stats_results.get(test_name, {})
+        test = _get_test(stats_results, test_name)
         features.append(test.get("signal_strength", 0.0))
 
     # Sample-size-normalized statistics (12 features)
@@ -130,8 +139,8 @@ def extract_features_from_stats(stats_results: dict) -> list[float]:
     # n_significant as fraction of total pairs
     n_output_bits = 64
     n_input_bits = 80
-    for test_name in ["bit_correlation", "entropy", "avalanche", "interaction"]:
-        test = stats_results.get(test_name, {})
+    for test_name in ["bit_correlation", "entropy", "record_distance", "interaction"]:
+        test = _get_test(stats_results, test_name)
         if "n_output_bits" in test:
             n_output_bits = test["n_output_bits"]
             break
@@ -145,7 +154,7 @@ def extract_features_from_stats(stats_results: dict) -> list[float]:
     features.append(ent.get("min_bit_entropy", 1.0))
     features.append(ent.get("min_byte_entropy", 8.0))
 
-    av = stats_results.get("avalanche", {})
+    av = _get_test(stats_results, "record_distance")
     features.append(av.get("deviation_from_expected", 0.0))
     features.append(av.get("stdev_ratio", 1.0))
 
@@ -352,9 +361,20 @@ def predict_logistic(model: dict, features: list[float]) -> dict:
     ]
 
     # Predict
-    z = sum(weights[j] * x_norm[j] for j in range(d)) + bias
+    contributions = [weights[j] * x_norm[j] for j in range(d)]
+    z = sum(contributions) + bias
     prob = sigmoid(z)
     predicted = 1 if prob >= threshold else 0
+
+    # Which features pushed the score up (toward "weakened") the most.
+    # Reported so a WARN can be traced to its drivers even when no single
+    # test crossed its own display threshold.
+    names = FEATURE_NAMES[:d] + [f"feature_{j}" for j in range(len(FEATURE_NAMES), d)]
+    top_features = sorted(
+        ({"feature": names[j], "contribution": round(contributions[j], 4),
+          "normalized_value": round(x_norm[j], 3)} for j in range(d)),
+        key=lambda f: -f["contribution"],
+    )[:5]
 
     # Confidence: how far from the decision boundary
     confidence = abs(prob - threshold) / max(threshold, 1 - threshold)
@@ -376,8 +396,11 @@ def predict_logistic(model: dict, features: list[float]) -> dict:
     return {
         "probability": prob,
         "predicted_label": predicted,
+        "label": "weakened" if predicted else "clean",
+        "threshold": threshold,
         "confidence": confidence,
         "verdict": verdict,
+        "top_features": top_features,
     }
 
 
@@ -391,6 +414,8 @@ def generate_training_data(
     output_bits_list: list[int] = None,
     sample_sizes: list[int] = None,
     verbose: bool = True,
+    seed_base: int = 100000,
+    first_batch: int = 0,
 ) -> list[dict]:
     """
     Generate labeled training data for the meta-learner.
@@ -405,6 +430,9 @@ def generate_training_data(
         Default [64] for backward compatibility.
       sample_sizes: List of sample sizes to cycle through (e.g. [2000, 10000, 50000]).
         Default [samples_per_variant] for backward compatibility.
+      seed_base: Master seed base; batch i uses seed_base + 7919*i.
+      first_batch: Start at this batch index (to split generation across
+        processes; the (width, size) cycle and seeds are unaffected).
     """
     # Import here to avoid circular dependency if called from other scripts
     sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
@@ -427,8 +455,10 @@ def generate_training_data(
 
     all_examples = []
 
-    for batch_idx in range(n_batches):
-        seed = 100000 + batch_idx * 7919
+    for batch_idx in range(first_batch, n_batches):
+        # seed_base=100000 reproduces the shipped model's training batches;
+        # `evaluate` uses a different base so its variants are genuinely unseen.
+        seed = seed_base + batch_idx * 7919
         rng = random.Random(seed)
         n_clean = rng.randint(4, 6)
 
@@ -476,6 +506,76 @@ def generate_training_data(
     return all_examples
 
 
+# --- Held-out evaluation ---
+
+def evaluate_model(model: dict, examples: list[dict]) -> dict:
+    """Score a trained model on labelled examples it was not trained on.
+
+    Returns overall accuracy / precision / recall / F1 at the model's stored
+    threshold, the confusion counts, and recall broken down by weakness
+    type, output width and sample size -- the numbers to quote instead of
+    training accuracy.
+    """
+    threshold = model["threshold"]
+    tp = fp = tn = fn = 0
+    by_type, by_width, by_size = {}, {}, {}
+    rows = []
+    for ex in examples:
+        pred = predict_logistic(model, ex["features"])
+        p = pred["probability"]
+        y = ex["label"]
+        yhat = 1 if p >= threshold else 0
+        if y == 1 and yhat == 1: tp += 1
+        elif y == 0 and yhat == 1: fp += 1
+        elif y == 0 and yhat == 0: tn += 1
+        else: fn += 1
+        for table, key in ((by_type, ex["weakness_type"]), (by_width, ex["output_bits"]), (by_size, ex["n_samples"])):
+            t = table.setdefault(key, {"n": 0, "correct": 0, "probs": []})
+            t["n"] += 1
+            t["correct"] += int(yhat == y)
+            t["probs"].append(round(p, 3))
+        rows.append({"codename": ex["codename"], "type": ex["weakness_type"], "output_bits": ex["output_bits"],
+                     "n_samples": ex["n_samples"], "label": y, "probability": round(p, 4), "predicted": yhat})
+    n = len(examples)
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    clean_probs = sorted(r["probability"] for r in rows if r["label"] == 0)
+    weak_probs = sorted(r["probability"] for r in rows if r["label"] == 1)
+    return {
+        "n_examples": n, "threshold": threshold,
+        "accuracy": (tp + tn) / n if n else 0.0,
+        "precision": precision, "recall": recall, "f1": f1,
+        "confusion": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
+        "clean_probability_range": [clean_probs[0], clean_probs[-1]] if clean_probs else None,
+        "weakened_probability_range": [weak_probs[0], weak_probs[-1]] if weak_probs else None,
+        "by_type": {k: {"n": v["n"], "accuracy": v["correct"] / v["n"]} for k, v in by_type.items()},
+        "by_width": {str(k): {"n": v["n"], "accuracy": v["correct"] / v["n"]} for k, v in by_width.items()},
+        "by_sample_size": {str(k): {"n": v["n"], "accuracy": v["correct"] / v["n"]} for k, v in by_size.items()},
+        "rows": rows,
+    }
+
+
+def print_evaluation(ev: dict, title: str = "HELD-OUT EVALUATION"):
+    c = ev["confusion"]
+    print(f"\n  {'=' * 60}")
+    print(f"    {title}")
+    print(f"  {'=' * 60}")
+    print(f"    Examples:   {ev['n_examples']}  (threshold {ev['threshold']:.2f})")
+    print(f"    Accuracy:   {ev['accuracy']:.3f}    Precision: {ev['precision']:.3f}    "
+          f"Recall: {ev['recall']:.3f}    F1: {ev['f1']:.3f}")
+    print(f"    Confusion:  TP={c['tp']}  FP={c['fp']}  TN={c['tn']}  FN={c['fn']}")
+    if ev["clean_probability_range"]:
+        print(f"    P(weakened) on clean variants:    {ev['clean_probability_range'][0]:.3f} – {ev['clean_probability_range'][1]:.3f}")
+    if ev["weakened_probability_range"]:
+        print(f"    P(weakened) on weakened variants: {ev['weakened_probability_range'][0]:.3f} – {ev['weakened_probability_range'][1]:.3f}")
+    for label, table in (("by weakness type", ev["by_type"]), ("by output width", ev["by_width"]),
+                         ("by sample size", ev["by_sample_size"])):
+        print(f"    Accuracy {label}:")
+        for k, v in sorted(table.items(), key=lambda kv: str(kv[0])):
+            print(f"      {str(k):<20} {v['accuracy']:.3f}  (n={v['n']})")
+
+
 # --- Reporting ---
 
 def print_model_summary(model: dict):
@@ -521,10 +621,13 @@ def main():
 
     # Train from existing training data
     train_parser = subparsers.add_parser("train", help="Train from existing training data file")
-    train_parser.add_argument("--training-data", required=True, help="Path to training_data.json")
+    train_parser.add_argument("--training-data", required=True, nargs="+",
+                              help="Path(s) to training_data.json files (concatenated)")
     train_parser.add_argument("--output", default="models/meta_learner.json")
     train_parser.add_argument("--lr", type=float, default=0.1)
     train_parser.add_argument("--epochs", type=int, default=500)
+    train_parser.add_argument("--threshold", type=float, default=None,
+                              help="Fix the decision threshold instead of using the F1-optimal training value")
 
     # Generate data + train in one step
     gen_parser = subparsers.add_parser("generate-and-train", help="Generate training data and train")
@@ -540,6 +643,27 @@ def main():
                                  "Default: use --samples-per-variant only.")
     gen_parser.add_argument("--lr", type=float, default=0.1)
     gen_parser.add_argument("--epochs", type=int, default=500)
+    gen_parser.add_argument("--first-batch", type=int, default=0,
+                            help="Generate batches [first-batch, n-batches) only (for splitting work)")
+    gen_parser.add_argument("--data-only", action="store_true",
+                            help="Only generate and save training data (requires --save-training-data)")
+
+    # Evaluate a trained model on freshly generated, unseen variants
+    eval_parser = subparsers.add_parser("evaluate", help="Generate held-out variants and score a trained model on them")
+    eval_parser.add_argument("--model", required=True, help="Path to trained model JSON")
+    eval_parser.add_argument("--n-batches", type=int, default=8)
+    eval_parser.add_argument("--variants-per-batch", type=int, default=12)
+    eval_parser.add_argument("--output-bits", type=str, default="64,128,160,256")
+    eval_parser.add_argument("--sample-sizes", type=str, default="2000,10000")
+    eval_parser.add_argument("--seed-base", type=int, default=900000,
+                             help="Must differ from the training base (100000) to be held out")
+    eval_parser.add_argument("--output", default="results/meta_evaluation.json")
+    eval_parser.add_argument("--save-examples", default=None,
+                             help="Save the generated held-out examples (features + labels) for re-scoring")
+    eval_parser.add_argument("--examples", default=None,
+                             help="Score previously saved held-out examples instead of generating new ones")
+    eval_parser.add_argument("--threshold", type=float, default=None,
+                             help="Override the model's decision threshold for this evaluation")
 
     # Classify a batch of datasets
     batch_parser = subparsers.add_parser("classify-batch", help="Classify all datasets in a directory")
@@ -557,8 +681,10 @@ def main():
 
     if args.command == "train":
         print(f"Loading training data: {args.training_data}")
-        with open(args.training_data) as f:
-            data = json.load(f)
+        data = []
+        for path in args.training_data:
+            with open(path) as f:
+                data.extend(json.load(f))
 
         X = [x["features"] if isinstance(x["features"], list) else
              [x["extended_features"][k] for k in FEATURE_NAMES]
@@ -575,6 +701,14 @@ def main():
         print(f"Training logistic regression...")
 
         model = train_logistic_regression(X, y, lr=args.lr, epochs=args.epochs)
+        if args.threshold is not None:
+            model["threshold_f1_optimal_on_training"] = model["threshold"]
+            model["threshold"] = args.threshold
+            model["threshold_note"] = (f"Decision threshold fixed at {args.threshold} rather than the F1-optimal "
+                                       f"training value {model['threshold_f1_optimal_on_training']}; see the "
+                                       f"whitepaper, section 3.2, for the held-out comparison.")
+        model["training_data"] = [os.path.basename(p) for p in args.training_data]
+        model["feature_note"] = "23 weights over 20 distinct features (positions 20-22 duplicate 8, 16, 17)"
         print_model_summary(model)
 
         os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
@@ -597,6 +731,7 @@ def main():
             samples_per_variant=args.samples_per_variant,
             output_bits_list=output_bits_list,
             sample_sizes=sample_sizes,
+            first_batch=args.first_batch,
         )
 
         if args.save_training_data:
@@ -604,6 +739,8 @@ def main():
             with open(args.save_training_data, "w") as f:
                 json.dump(examples, f, indent=2)
             print(f"Training data saved to {args.save_training_data}")
+        if args.data_only:
+            return
 
         X = [x["features"] for x in examples]
         y = [x["label"] for x in examples]
@@ -616,6 +753,41 @@ def main():
         with open(args.output, "w") as f:
             json.dump(model, f, indent=2)
         print(f"\nModel saved to {args.output}")
+
+    elif args.command == "evaluate":
+        print(f"Loading model: {args.model}")
+        with open(args.model) as f:
+            model = json.load(f)
+        if args.seed_base == 100000:
+            print("WARNING: seed base 100000 regenerates the TRAINING batches; this is not a held-out evaluation.")
+        output_bits_list = [int(x) for x in args.output_bits.split(",")]
+        sample_sizes = [int(x) for x in args.sample_sizes.split(",")]
+        if args.examples:
+            with open(args.examples) as f:
+                examples = json.load(f)
+            print(f"Loaded {len(examples)} held-out examples from {args.examples}")
+        else:
+            print(f"Generating {args.n_batches} held-out batches x {args.variants_per_batch} variants "
+                  f"(widths {output_bits_list}, sizes {sample_sizes}, seed base {args.seed_base})")
+            examples = generate_training_data(
+                n_batches=args.n_batches, variants_per_batch=args.variants_per_batch,
+                output_bits_list=output_bits_list, sample_sizes=sample_sizes,
+                seed_base=args.seed_base,
+            )
+            if args.save_examples:
+                os.makedirs(os.path.dirname(args.save_examples) or ".", exist_ok=True)
+                with open(args.save_examples, "w") as f:
+                    json.dump(examples, f, indent=2)
+                print(f"Held-out examples saved to {args.save_examples}")
+        if args.threshold is not None:
+            model = dict(model, threshold=args.threshold)
+        ev = evaluate_model(model, examples)
+        print_evaluation(ev, title=f"HELD-OUT EVALUATION — {os.path.basename(args.model)}")
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+        with open(args.output, "w") as f:
+            json.dump({"model": args.model, "seed_base": args.seed_base, "output_bits": output_bits_list,
+                       "sample_sizes": sample_sizes, "evaluation": ev}, f, indent=2)
+        print(f"\nResults saved to {args.output}")
 
     elif args.command == "classify-batch":
         print(f"Loading model: {args.model}")

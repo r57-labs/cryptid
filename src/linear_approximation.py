@@ -71,20 +71,29 @@ def linear_approximation_analysis(
     hash_fn,
     n_samples: int = 10000,
     input_bytes: int = 10,
-    max_input_bits: int = 40,
-    max_output_bits: int = 64,
+    max_input_bits: int = 80,
+    max_output_bits: int = 256,
+    max_multi_output_bits: int = 256,
+    n_level4: int = 100000,
     rng: random.Random = None,
     verbose: bool = True,
 ) -> dict:
     """
     Compute linear approximation biases for low-weight masks.
 
+    Coverage: every generated input bit (input_bytes*8, default 80) and the
+    first max_output_bits digest bits for single-output-bit masks; multi-bit
+    output masks use the first max_multi_output_bits digest bits. Levels
+    1, 2, 3 and 5 are exhaustive over that range; level 4 (2x2) is sampled.
+    Mask parities are evaluated as big-int bitset operations, which is what
+    makes the exhaustive 3-bit level (C(80,3) x 256 = 21M tests) affordable.
+
     Tests:
-      Level 1: All 1-bit input × 1-bit output pairs (existing bit_correlation equivalent)
-      Level 2: All 2-bit input × 1-bit output combinations (new)
-      Level 3: All 1-bit input × 2-bit output combinations (new)
-      Level 4: Sampled 2×2 combinations (new)
-      Level 5: Sampled 3-bit input × 1-bit output (new)
+      Level 1: All 1-bit input × 1-bit output pairs (bit_correlation equivalent, full width)
+      Level 2: All 2-bit input × 1-bit output combinations
+      Level 3: All 1-bit input × 2-bit output combinations
+      Level 4: Sampled 2×2 combinations
+      Level 5: All 3-bit input × 1-bit output combinations
       Level 6: Byte-parity masks (structured patterns)
     """
     if rng is None:
@@ -101,7 +110,7 @@ def linear_approximation_analysis(
 
     for _ in range(n_samples):
         inp = bytes(rng.randint(0, 255) for _ in range(input_bytes))
-        h = hash_fn(inp.hex())
+        h = hash_fn(inp)
         inp_bits = []
         for b in inp:
             inp_bits.extend([(b >> (7 - i)) & 1 for i in range(8)])
@@ -116,10 +125,20 @@ def linear_approximation_analysis(
     if verbose:
         print(f" done ({n_input_bits} input bits, {n_output_bits} output bits)")
 
-    # Pre-compute: for efficiency, convert to column-major for fast mask application
-    # input_cols[bit_pos] = [sample0_val, sample1_val, ...]
-    input_cols = [[inputs_bits[s][b] for s in range(n_samples)] for b in range(n_input_bits)]
-    output_cols = [[outputs_bits[s][b] for s in range(n_samples)] for b in range(n_output_bits)]
+    # Pre-compute: one Python big-int per bit position, with sample s at
+    # bit s. XOR-ing masks and counting agreements then costs a handful of
+    # word-wide operations per test instead of a Python loop over samples.
+    # (Equivalent to the earlier per-sample loop; roughly 50x faster.)
+    def _column(rows, b):
+        v = 0
+        for s_idx, row in enumerate(rows):
+            if row[b]:
+                v |= 1 << s_idx
+        return v
+
+    input_cols = [_column(inputs_bits, b) for b in range(n_input_bits)]
+    output_cols = [_column(outputs_bits, b) for b in range(n_output_bits)]
+    all_ones = (1 << n_samples) - 1
 
     all_biases = []
     significant_approximations = []
@@ -136,33 +155,15 @@ def linear_approximation_analysis(
 
         total_tests += 1
 
-        # Compute XOR of input mask for all samples
-        if len(in_positions) == 1:
-            in_xor = input_cols[in_positions[0]]
-        elif len(in_positions) == 2:
-            in_xor = [input_cols[in_positions[0]][s] ^ input_cols[in_positions[1]][s]
-                       for s in range(n_samples)]
-        elif len(in_positions) == 3:
-            in_xor = [input_cols[in_positions[0]][s] ^ input_cols[in_positions[1]][s]
-                       ^ input_cols[in_positions[2]][s] for s in range(n_samples)]
-        else:
-            in_xor = [0] * n_samples
-            for pos in in_positions:
-                in_xor = [in_xor[s] ^ input_cols[pos][s] for s in range(n_samples)]
+        in_xor = 0
+        for pos in in_positions:
+            in_xor ^= input_cols[pos]
+        out_xor = 0
+        for pos in out_positions:
+            out_xor ^= output_cols[pos]
 
-        # Compute XOR of output mask for all samples
-        if len(out_positions) == 1:
-            out_xor = output_cols[out_positions[0]]
-        elif len(out_positions) == 2:
-            out_xor = [output_cols[out_positions[0]][s] ^ output_cols[out_positions[1]][s]
-                        for s in range(n_samples)]
-        else:
-            out_xor = [0] * n_samples
-            for pos in out_positions:
-                out_xor = [out_xor[s] ^ output_cols[pos][s] for s in range(n_samples)]
-
-        # Count agreements (in_xor == out_xor)
-        agreements = sum(1 for s in range(n_samples) if in_xor[s] == out_xor[s])
+        # Count samples where the input mask parity equals the output mask parity
+        agreements = ((in_xor ^ out_xor) ^ all_ones).bit_count()
 
         # Bias = |P(agree) - 0.5|
         p_agree = agreements / n_samples
@@ -203,104 +204,71 @@ def linear_approximation_analysis(
     if verbose:
         print(f" {level1_sig} significant")
 
-    # Level 2: 2-bit input × 1-bit output
-    # Subsample input pairs if too many
+    # Output bits for multi-bit masks (pairs / triples get expensive quickly)
+    out_bits_multi = list(range(min(n_output_bits, max_multi_output_bits)))
+
+    # Level 2: all 2-bit input masks × every output bit
     input_pairs = list(combinations(range(n_input_bits), 2))
-    if len(input_pairs) > 200:
-        rng2 = random.Random(42)
-        input_pairs = rng2.sample(input_pairs, 200)
-
-    # Subsample output bits if too many
-    out_bits_to_test = list(range(n_output_bits))
-    if n_output_bits > 32:
-        out_bits_to_test = list(range(0, n_output_bits, max(1, n_output_bits // 32)))[:32]
-
     if verbose:
-        print(f"    Level 2: 2×1 masks ({len(input_pairs)}×{len(out_bits_to_test)} = "
-              f"{len(input_pairs) * len(out_bits_to_test)} tests)...", end="", flush=True)
-
+        print(f"    Level 2: 2×1 masks ({len(input_pairs)}×{n_output_bits} = "
+              f"{len(input_pairs) * n_output_bits} tests)...", end="", flush=True)
     for i_pair in input_pairs:
-        for j in out_bits_to_test:
+        for j in range(n_output_bits):
             test_mask_pair(i_pair, (j,))
-
     level2_sig = len(significant_approximations) - level1_sig
     if verbose:
         print(f" {level2_sig} significant")
 
-    # Level 3: 1-bit input × 2-bit output
-    output_pairs = list(combinations(out_bits_to_test, 2))
-    if len(output_pairs) > 200:
-        rng3 = random.Random(43)
-        output_pairs = rng3.sample(output_pairs, 200)
-
-    in_bits_to_test = list(range(n_input_bits))
-    if n_input_bits > 32:
-        in_bits_to_test = list(range(0, n_input_bits, max(1, n_input_bits // 32)))[:32]
-
+    # Level 3: every input bit × all 2-bit output masks (within out_bits_multi)
+    output_pairs = list(combinations(out_bits_multi, 2))
     if verbose:
-        print(f"    Level 3: 1×2 masks ({len(in_bits_to_test)}×{len(output_pairs)} = "
-              f"{len(in_bits_to_test) * len(output_pairs)} tests)...", end="", flush=True)
-
-    for i in in_bits_to_test:
+        print(f"    Level 3: 1×2 masks ({n_input_bits}×{len(output_pairs)} = "
+              f"{n_input_bits * len(output_pairs)} tests)...", end="", flush=True)
+    for i in range(n_input_bits):
         for j_pair in output_pairs:
             test_mask_pair((i,), j_pair)
-
     level3_sig = len(significant_approximations) - level1_sig - level2_sig
     if verbose:
         print(f" {level3_sig} significant")
 
-    # Level 4: Sampled 2×2 combinations
-    n_level4 = min(5000, len(input_pairs) * len(output_pairs))
+    # Level 4: sampled 2×2 combinations
+    n_level4 = min(n_level4, len(input_pairs) * len(output_pairs))
     if verbose:
         print(f"    Level 4: 2×2 masks ({n_level4} sampled tests)...", end="", flush=True)
-
     rng4 = random.Random(44)
     for _ in range(n_level4):
-        i_pair = rng4.choice(input_pairs)
-        j_pair = rng4.choice(output_pairs)
-        test_mask_pair(i_pair, j_pair)
-
+        test_mask_pair(rng4.choice(input_pairs), rng4.choice(output_pairs))
     level4_sig = len(significant_approximations) - level1_sig - level2_sig - level3_sig
     if verbose:
         print(f" {level4_sig} significant")
 
-    # Level 5: Sampled 3-bit input × 1-bit output
-    n_level5 = min(3000, n_input_bits * (n_input_bits - 1) * (n_input_bits - 2) // 6)
+    # Level 5: all 3-bit input masks × output bits (within out_bits_multi)
+    input_triples = combinations(range(n_input_bits), 3)
+    n_triples = n_input_bits * (n_input_bits - 1) * (n_input_bits - 2) // 6
     if verbose:
-        print(f"    Level 5: 3×1 masks ({n_level5} sampled tests)...", end="", flush=True)
-
-    rng5 = random.Random(45)
-    for _ in range(n_level5):
-        i_triple = tuple(sorted(rng5.sample(range(n_input_bits), 3)))
-        j = rng5.choice(out_bits_to_test)
-        test_mask_pair(i_triple, (j,))
-
+        print(f"    Level 5: 3×1 masks ({n_triples}×{len(out_bits_multi)} = "
+              f"{n_triples * len(out_bits_multi)} tests)...", end="", flush=True)
+    for i_triple in input_triples:
+        for j in out_bits_multi:
+            test_mask_pair(i_triple, (j,))
     level5_sig = len(significant_approximations) - level1_sig - level2_sig - level3_sig - level4_sig
     if verbose:
         print(f" {level5_sig} significant")
 
-    # Level 6: Byte-parity masks (structured)
-    # Test parity of each input byte vs parity of each output byte
+    # Level 6: byte-parity masks (structured): parity of each input byte and
+    # each input byte pair vs parity of each output byte
     if verbose:
         print(f"    Level 6: byte-parity masks...", end="", flush=True)
-
-    n_in_bytes = min(input_bytes, n_input_bits // 8)
-    n_out_bytes = min(n_output_bits // 8, 32)
-
+    n_in_bytes = n_input_bits // 8
+    n_out_bytes = n_output_bits // 8
     for ib in range(n_in_bytes):
-        in_mask = tuple(range(ib * 8, min((ib + 1) * 8, n_input_bits)))
+        in_mask = tuple(range(ib * 8, (ib + 1) * 8))
         for ob in range(n_out_bytes):
-            out_mask = tuple(range(ob * 8, min((ob + 1) * 8, n_output_bits)))
-            test_mask_pair(in_mask, out_mask)
-
-    # Also test parity of input byte pairs
+            test_mask_pair(in_mask, tuple(range(ob * 8, (ob + 1) * 8)))
     for ib1, ib2 in combinations(range(n_in_bytes), 2):
-        in_mask = tuple(range(ib1 * 8, min((ib1 + 1) * 8, n_input_bits))) + \
-                  tuple(range(ib2 * 8, min((ib2 + 1) * 8, n_input_bits)))
+        in_mask = tuple(range(ib1 * 8, (ib1 + 1) * 8)) + tuple(range(ib2 * 8, (ib2 + 1) * 8))
         for ob in range(n_out_bytes):
-            out_mask = tuple(range(ob * 8, min((ob + 1) * 8, n_output_bits)))
-            test_mask_pair(in_mask, out_mask)
-
+            test_mask_pair(in_mask, tuple(range(ob * 8, (ob + 1) * 8)))
     level6_sig = len(significant_approximations) - level1_sig - level2_sig - level3_sig - level4_sig - level5_sig
     if verbose:
         print(f" {level6_sig} significant")
@@ -318,7 +286,8 @@ def linear_approximation_analysis(
                       if a["input_weight"] == 1 and a["output_weight"] == 1]
 
     # Noise floor for max_bias: at N samples, random fluctuation ~1/sqrt(N)
-    # Max of ~22K tests: expect max bias ~3-4/sqrt(N) due to multiple testing
+    # Max over millions of tests: expect max bias ~3/sqrt(N) under the null
+    # (sqrt(2 ln M) / (2 sqrt N) with M ~ 1e7), so 10/sqrt(N) is conservative
     bias_noise_floor = 4.0 / math.sqrt(n_samples)
 
     # Signal: significantly more approximations than expected by chance,
@@ -338,11 +307,12 @@ def linear_approximation_analysis(
     # Categorize by level for reporting
     level_summary = {
         "1×1": {"tests": level1_tests, "significant": level1_sig},
-        "2×1": {"tests": total_tests - level1_tests, "significant": level2_sig},  # approx
-        "1×2": {"significant": level3_sig},
-        "2×2": {"significant": level4_sig},
-        "3×1": {"significant": level5_sig},
-        "byte_parity": {"significant": level6_sig},
+        "2×1": {"tests": len(input_pairs) * n_output_bits, "significant": level2_sig},
+        "1×2": {"tests": n_input_bits * len(output_pairs), "significant": level3_sig},
+        "2×2": {"tests": n_level4, "significant": level4_sig},
+        "3×1": {"tests": n_triples * len(out_bits_multi), "significant": level5_sig},
+        "byte_parity": {"tests": (n_in_bytes + n_in_bytes * (n_in_bytes - 1) // 2) * n_out_bytes,
+                        "significant": level6_sig},
     }
 
     result = {
@@ -452,14 +422,9 @@ def main():
                 print(f"  Unknown algorithm: {algo}")
                 continue
 
-            def make_wrapper(fn):
-                def wrapper(hex_input):
-                    return fn(hex_input)
-                return wrapper
-
             t0 = time.time()
             results = linear_approximation_analysis(
-                make_wrapper(hash_fn),
+                hash_fn,
                 n_samples=args.size,
                 verbose=True,
             )

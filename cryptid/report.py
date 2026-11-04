@@ -70,10 +70,16 @@ def verdict_color(verdict: str) -> str:
     return verdict
 
 
-def signal_indicator(detected: bool) -> str:
-    """Return a colored signal indicator."""
+def signal_indicator(detected: bool, flagged: bool = False) -> str:
+    """Return a colored signal indicator.
+
+    detected: strength above the display threshold -> SIGNAL
+    flagged:  the test's own decision fired but strength is small -> marginal
+    """
     if detected:
         return Colors.red("SIGNAL")
+    if flagged:
+        return Colors.yellow("marginal")
     return Colors.green("clean")
 
 
@@ -107,6 +113,8 @@ def print_verdict(result) -> None:
         msg = f"Anomalies detected in: {', '.join(result.signal_sources)}"
     else:
         msg = "Analysis incomplete due to errors"
+        if result.signal_sources:
+            msg += f" (signals in: {', '.join(result.signal_sources)})"
 
     box_width = 58
     print(f"  ┌{'─' * box_width}┐")
@@ -131,7 +139,7 @@ def print_statistical_results(result) -> None:
     test_names = {
         "bit_correlation": "Bit correlation",
         "entropy": "Output entropy",
-        "avalanche": "Avalanche effect",
+        "record_distance": "Inter-record distance",
         "frequency": "Byte frequency",
         "mutual_information": "Mutual information",
         "interaction": "Multi-byte interaction",
@@ -142,8 +150,9 @@ def print_statistical_results(result) -> None:
             test = result.stats[key]
             sig = test.get("signal_strength", 0)
             detected = sig > 0.1
+            flagged = bool(test.get("signal", False))
 
-            indicator = signal_indicator(detected)
+            indicator = signal_indicator(detected, flagged)
             sig_str = f"{sig:.3f}" if sig > 0 else "0.000"
 
             print(f"    {display:<25} {indicator:<14} (signal: {sig_str})")
@@ -155,7 +164,7 @@ def print_statistical_results(result) -> None:
             print(f"    {'Meta-learner':<25} {Colors.dim(f'skipped — {reason}')}")
         else:
             prob = result.meta_learner.get("probability", 0)
-            label = result.meta_learner.get("predicted_label", "?")
+            label = result.meta_learner.get("label", "?")
             threshold = result.meta_learner.get("threshold", 0.4)
 
             p_str = f"{prob:.3f}"
@@ -166,7 +175,15 @@ def print_statistical_results(result) -> None:
             else:
                 p_colored = Colors.green(p_str)
 
-            print(f"    {'Meta-learner':<25} P(weakened) = {p_colored}")
+            print(f"    {'Meta-learner':<25} P(weakened) = {p_colored}  (threshold {threshold:.2f})")
+
+            # When the score is near or over the threshold, say what drove it,
+            # so a WARN with six "clean" rows is explainable.
+            if prob >= threshold * 0.8:
+                top = [f for f in result.meta_learner.get("top_features", []) if f["contribution"] > 0][:3]
+                if top:
+                    drivers = ", ".join(f"{f['feature']} (+{f['contribution']:.2f})" for f in top)
+                    print(f"    {'':<25} {Colors.dim('driven by: ' + drivers)}")
 
     elapsed = result.timings.get("statistical", 0)
     if elapsed:
@@ -312,7 +329,7 @@ def print_comparison_report(result_a, result_b, level: str = "standard") -> None
         test_names = {
             "bit_correlation": "Bit correlation",
             "entropy": "Output entropy",
-            "avalanche": "Avalanche effect",
+            "record_distance": "Inter-record distance",
             "frequency": "Byte frequency",
             "mutual_information": "Mutual information",
             "interaction": "Multi-byte interaction",

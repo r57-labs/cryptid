@@ -44,8 +44,10 @@ if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
 from input_handler import (
+    InputFormatError,
     load_input,
     generate_from_command,
+    generate_plaintexts,
     make_hash_fn_from_records,
     make_hash_fn_from_command,
     detect_output_width,
@@ -60,8 +62,8 @@ def _resolve_model_path(args_model: str = None) -> str:
         return args_model
 
     candidates = [
+        os.path.join(_project_dir, "models", "meta_learner_v4.json"),
         os.path.join(_project_dir, "models", "meta_learner_v3_scale_invariant.json"),
-        os.path.join(_project_dir, "models", "meta_learner.json"),
     ]
     for path in candidates:
         if os.path.exists(path):
@@ -83,34 +85,19 @@ def _get_builtin_hash_fn(algorithm: str):
 
 
 def _generate_records(hash_fn, n_samples: int, input_bytes: int = 10, verbose: bool = True):
-    """Generate input/output records using a hash function."""
+    """Generate input/output records using a hash function.
+
+    Uses the toolkit's standard mixed text distribution (generate_plaintexts);
+    the hash function sees each plaintext's UTF-8 bytes.
+    """
     import random
     rng = random.Random(42)
-    records = []
 
     if verbose:
         print(f"  Generating {n_samples:,} test vectors...")
 
-    for i in range(n_samples):
-        # Mix of input distributions for robustness
-        r = rng.random()
-        if r < 0.5:
-            # Random bytes
-            data = bytes(rng.randint(0, 255) for _ in range(input_bytes))
-            plaintext = data.hex()
-        elif r < 0.8:
-            # Dictionary-like words
-            length = rng.randint(3, 15)
-            chars = "abcdefghijklmnopqrstuvwxyz"
-            plaintext = "".join(rng.choice(chars) for _ in range(length))
-        else:
-            # Sequential/counter
-            plaintext = f"counter_{i:010d}"
-
-        hash_val = hash_fn(plaintext)
-        records.append({"plaintext": plaintext, "hash": hash_val})
-
-    return records
+    plaintexts = generate_plaintexts(n_samples, rng, input_bytes)
+    return [{"plaintext": pt, "hash": hash_fn(pt)} for pt in plaintexts]
 
 
 # --- Subcommands ---
@@ -139,7 +126,11 @@ def cmd_test(args):
         # Load from file
         if verbose:
             print(f"\n  Loading: {args.input}")
-        records = load_input(args.input)
+        try:
+            records = load_input(args.input)
+        except (InputFormatError, OSError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(3)
         name = os.path.splitext(os.path.basename(args.input))[0]
         if verbose:
             print(f"  Loaded {len(records):,} records ({detect_output_width(records)}-bit output)")
@@ -229,15 +220,19 @@ def cmd_compare(args):
 
     model_path = _resolve_model_path(getattr(args, "model", None))
 
-    if verbose:
-        print(f"\n  Loading target: {args.target}")
-    records_a = load_input(args.target)
-    name_a = os.path.splitext(os.path.basename(args.target))[0]
+    try:
+        if verbose:
+            print(f"\n  Loading target: {args.target}")
+        records_a = load_input(args.target)
+        name_a = os.path.splitext(os.path.basename(args.target))[0]
 
-    if verbose:
-        print(f"  Loading reference: {args.reference}")
-    records_b = load_input(args.reference)
-    name_b = os.path.splitext(os.path.basename(args.reference))[0]
+        if verbose:
+            print(f"  Loading reference: {args.reference}")
+        records_b = load_input(args.reference)
+        name_b = os.path.splitext(os.path.basename(args.reference))[0]
+    except (InputFormatError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(3)
 
     if verbose:
         print(f"  Target:    {len(records_a):,} records")
@@ -253,45 +248,175 @@ def cmd_compare(args):
         level="quick", model_path=model_path, verbose=verbose,
     )
 
+    # Direct output comparison on shared inputs (the faithfulness check)
+    divergence = _check_output_divergence(records_a, records_b)
+
     # Output
     if json_output:
         comparison = {
             "target": result_a.to_dict(),
             "reference": result_b.to_dict(),
+            "output_comparison": divergence,
         }
         print(json.dumps(comparison, indent=2, default=str))
     else:
         print_comparison_report(result_a, result_b)
+        _print_output_divergence(divergence, verbose)
 
-    # Check for direct output divergence if inputs match
-    _check_output_divergence(records_a, records_b, verbose)
+    # Exit code: mismatching outputs on shared inputs is a failure
+    if divergence["mismatches"] > 0:
+        sys.exit(2)
 
 
-def _check_output_divergence(records_a: list, records_b: list, verbose: bool):
-    """Check if two datasets have matching inputs but different outputs."""
+def _check_output_divergence(records_a: list, records_b: list) -> dict:
+    """Compare outputs of the two datasets on the inputs they share."""
     lookup_b = {}
     for rec in records_b:
         lookup_b[rec["plaintext"]] = rec["hash"]
 
     mismatches = 0
     checked = 0
+    examples = []
     for rec in records_a:
         if rec["plaintext"] in lookup_b:
             checked += 1
             if rec["hash"] != lookup_b[rec["plaintext"]]:
                 mismatches += 1
+                if len(examples) < 3:
+                    examples.append({"plaintext": rec["plaintext"],
+                                     "target": rec["hash"], "reference": lookup_b[rec["plaintext"]]})
 
+    return {
+        "shared_inputs": checked,
+        "mismatches": mismatches,
+        "mismatch_pct": (mismatches / checked * 100) if checked else None,
+        "examples": examples,
+    }
+
+
+def _print_output_divergence(div: dict, verbose: bool):
+    checked, mismatches = div["shared_inputs"], div["mismatches"]
     if checked == 0:
-        if verbose:
-            print("  Note: no overlapping inputs found between target and reference.")
-            print("  For direct comparison, ensure both files hash the same inputs.")
+        print("  Note: no overlapping inputs found between target and reference.")
+        print("  For direct comparison, ensure both files hash the same inputs.")
     elif mismatches > 0:
-        pct = mismatches / checked * 100
-        print(f"\n  {Colors.red('!')} Output mismatch: {mismatches:,}/{checked:,} ({pct:.1f}%) of shared inputs differ")
+        print(f"\n  {Colors.red('!')} Output mismatch: {mismatches:,}/{checked:,} ({div['mismatch_pct']:.1f}%) of shared inputs differ")
         print(f"  This indicates the implementations are NOT equivalent.")
+        for ex in div["examples"]:
+            t, r = ex["target"], ex["reference"]
+            first_diff = next((i for i, (a, b) in enumerate(zip(t, r)) if a != b), min(len(t), len(r)))
+            print(f"    {ex['plaintext']!r}: digests first differ at hex position {first_diff} "
+                  f"(target …{t[first_diff:first_diff+8]}, reference …{r[first_diff:first_diff+8]})")
     else:
+        print(f"\n  {Colors.green('✓')} All {checked:,} shared inputs produce identical outputs.")
+
+
+def _kat_messages(rng) -> list[tuple[str, bytes]]:
+    """Messages for known-answer testing: classic strings plus random
+    messages at padding-boundary lengths for 64- and 128-byte block hashes
+    and the SHA-3-256 rate, where implementation bugs cluster."""
+    msgs = [
+        ("empty", b""),
+        ("abc", b"abc"),
+        ("nist-448-bit", b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+        ("nist-896-bit", b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn"
+                         b"hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"),
+        ("all-zero-64", bytes(64)),
+        ("all-0xff-64", b"\xff" * 64),
+    ]
+    for L in (1, 31, 32, 55, 56, 63, 64, 65, 111, 112, 119, 127, 128, 129, 135, 136, 137, 1000, 10000):
+        msgs.append((f"random-{L}B", bytes(rng.randint(0, 255) for _ in range(L))))
+    return msgs
+
+
+def cmd_kat(args):
+    """Known-answer test: does an implementation agree with a trusted reference?
+
+    This -- not the statistical battery -- is the check for "is this
+    implementation of <algorithm> faithful?". A mis-constanted or
+    round-reduced SHA-256 is still a well-mixed function and passes every
+    statistical test; it only fails by disagreeing with the reference.
+    """
+    import random
+    from generate_dataset import HASH_FUNCTIONS, KNOWN_ANSWERS
+
+    verbose = not args.quiet
+    if args.json:
+        verbose = False
+        Colors.disable()
+
+    algorithm = args.algorithm
+    reference = _get_builtin_hash_fn(algorithm)
+    results = {"algorithm": algorithm, "mode": None, "checked": 0, "mismatches": [], "errors": []}
+
+    def check(label, message, expected, actual):
+        results["checked"] += 1
+        if actual != expected:
+            results["mismatches"].append({"message": label, "expected": expected, "actual": actual})
+            if verbose:
+                pos = next((i for i, (a, b) in enumerate(zip(expected, actual)) if a != b),
+                           min(len(expected), len(actual)))
+                print(f"  {Colors.red('✗')} {label}: digests first differ at hex position {pos} "
+                      f"(expected …{expected[pos:pos + 8]}, got …{actual[pos:pos + 8]})")
+        elif verbose and args.verbose:
+            print(f"  {Colors.green('✓')} {label}")
+
+    # 1. Self-check the built-in reference against published vectors
+    results["mode"] = "self-check"
+    for msg, expected in KNOWN_ANSWERS.get(algorithm, []):
+        label = f"published vector {msg!r}" if isinstance(msg, str) else f"published vector ({len(msg)} bytes)"
+        check(label, msg, expected, reference(msg))
+    if algorithm not in KNOWN_ANSWERS and verbose:
+        print(f"  (no published vectors embedded for {algorithm}; the reference is the library implementation)")
+
+    # 2. Check the external implementation against the reference
+    rng = random.Random(42)
+    if args.command:
+        results["mode"] = "command"
+        under_test = make_hash_fn_from_command(args.command)
         if verbose:
-            print(f"\n  {Colors.green('✓')} All {checked:,} shared inputs produce identical outputs.")
+            print(f"\n  Known-answer test: {args.command!r} vs built-in {algorithm}")
+        for label, message in _kat_messages(rng):
+            try:
+                actual = under_test(message)
+            except Exception as e:
+                results["errors"].append({"message": label, "error": str(e)})
+                if verbose:
+                    print(f"  {Colors.red('!')} {label}: {e}")
+                continue
+            check(label, message, reference(message), actual)
+
+    elif args.input:
+        results["mode"] = "file"
+        try:
+            records = load_input(args.input)
+        except (InputFormatError, OSError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(3)
+        if verbose:
+            print(f"\n  Known-answer test: {len(records):,} records in {args.input} vs built-in {algorithm}")
+        for i, rec in enumerate(records):
+            check(f"record {i + 1} ({rec['plaintext'][:24]!r})", rec["plaintext"],
+                  reference(rec["plaintext"]), rec["hash"])
+
+    n_bad = len(results["mismatches"])
+    results["verdict"] = "ERROR" if results["errors"] and results["checked"] == 0 else ("FAIL" if n_bad else "PASS")
+
+    if args.json:
+        print(json.dumps(results, indent=2, default=str))
+    else:
+        print()
+        if results["verdict"] == "PASS":
+            print(f"  {Colors.green('PASS')} — {results['checked']:,} known-answer checks matched the {algorithm} reference.")
+        elif results["verdict"] == "FAIL":
+            print(f"  {Colors.red('FAIL')} — {n_bad:,}/{results['checked']:,} checks disagree with the {algorithm} reference.")
+        else:
+            print(f"  {Colors.red('ERROR')} — implementation could not be run.")
+        if results["errors"]:
+            print(f"  {len(results['errors'])} message(s) could not be hashed by the implementation under test.")
+        print()
+
+    sys.exit({"PASS": 0, "FAIL": 2, "ERROR": 3}[results["verdict"]])
 
 
 def cmd_list_algorithms(args):
@@ -352,6 +477,8 @@ examples:
   cryptid test --command "./my_hash_tool" -n 10000
   cryptid generate -a sha256 -n 100000 -o vectors.jsonl
   cryptid compare --target device.jsonl --reference openssl.jsonl
+  cryptid kat -a sha256 --command "openssl dgst -sha256 -hex"
+  cryptid kat -a sha256 -i device_output.jsonl
   cryptid list-algorithms
         """,
     )
@@ -402,6 +529,25 @@ examples:
     p_cmp.add_argument("--json", action="store_true", help="Output results as JSON")
     p_cmp.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
     p_cmp.set_defaults(func=cmd_compare)
+
+    # --- kat ---
+    p_kat = subparsers.add_parser(
+        "kat",
+        help="Known-answer test: check an implementation against a trusted reference",
+        description="Verify that an external implementation (a command, or a JSONL file of its "
+                    "outputs) agrees with the built-in reference for a standard algorithm. This is "
+                    "the faithfulness check; the statistical battery cannot detect a correct-looking "
+                    "but non-standard implementation.",
+    )
+    p_kat.add_argument("-a", "--algorithm", required=True,
+                       help="Reference algorithm name (see list-algorithms)")
+    kat_src = p_kat.add_mutually_exclusive_group()
+    kat_src.add_argument("--command", help="Shell command: raw message bytes on stdin, hex digest on stdout")
+    kat_src.add_argument("-i", "--input", help="JSONL file of plaintext/hash pairs produced by the implementation")
+    p_kat.add_argument("--json", action="store_true", help="Output results as JSON")
+    p_kat.add_argument("-v", "--verbose", action="store_true", help="Print every check, not just failures")
+    p_kat.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
+    p_kat.set_defaults(func=cmd_kat)
 
     # --- list-algorithms ---
     p_list = subparsers.add_parser(
