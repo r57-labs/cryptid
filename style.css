@@ -289,6 +289,12 @@ body {
   font-weight: 700;
   margin-top: 0.25rem;
 }
+.t-verdict-fail {
+  display: block;
+  color: var(--red);
+  font-weight: 700;
+  margin-top: 0.25rem;
+}
 
 /* ── Stats Bar ── */
 .stats-bar {

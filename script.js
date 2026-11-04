@@ -208,7 +208,7 @@ document.addEventListener('keydown', (e) => {
       const raw = el.textContent.trim();
       // Only animate pure numbers
       const num = parseFloat(raw.replace(/[^0-9.]/g, ''));
-      if (isNaN(num) || raw.includes('<') || raw.includes('%') === false && raw.includes('s') === false && isNaN(parseFloat(raw))) return;
+      if (isNaN(num) || raw.includes('<') || raw.includes('/') || raw.includes('%') === false && raw.includes('s') === false && isNaN(parseFloat(raw))) return;
 
       let start = 0;
       const duration = 1200;
