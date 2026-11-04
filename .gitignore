@@ -1,0 +1,10 @@
+# Leftovers from the main-branch checkout (this branch holds only the site)
+__pycache__/
+*.py[cod]
+.DS_Store
+.pending/
+.task-result
+venv/
+.venv/
+*.tmp
+*.bak
