@@ -48,7 +48,7 @@
       </h1>
       <p class="hero-subtitle">
         Black-box hash function assessment toolkit.<br />
-        Statistical and differential tests for any function that returns a digest — and known-answer checks for implementations of the standard ones.
+        Statistical tests for any function whose outputs you can collect, differential and structural tests for any you can call — and known-answer checks for implementations of the standard ones.
       </p>
       <div class="hero-actions">
         <a href="https://github.com/r57-labs/cryptid" target="_blank" class="btn btn-primary">
@@ -128,8 +128,8 @@
       <div class="two-col">
         <div class="col-text">
           <p>The question has two forms, and they need different tools. <em>Is this function sound?</em> — is its output statistically indistinguishable from random, and does it change the way an ideal function's would when the input changes? And <em>is this implementation faithful?</em> — is this HSM's, this firmware's, this vendor library's SHA-256 actually SHA-256?</p>
-          <p>For the first, <strong>cryptid</strong> treats the function as a black box and runs fourteen statistical, differential and structural tests in four tiers, so that a weakness invisible to one tier is visible to another. Anything that returns a digest can be tested — including hardware.</p>
-          <p>For the second, no statistical test will do: a SHA-256 with a typo in one round constant, or with 24 of its 64 rounds, is still a well-mixed function and passes every test in the battery. So cryptid also ships <code>kat</code>, a known-answer check against a trusted reference. The first version of this project blurred the two questions; the current one doesn't.</p>
+          <p>For the first, <strong>cryptid</strong> treats the function as a black box and runs fourteen statistical, differential and structural tests in four tiers, so that a weakness invisible to one tier is visible to another. A file of outputs gets the statistical tier; anything you can call — a command, a library, a device behind a wrapper — gets all four.</p>
+          <p>For the second, no statistical test will do: a SHA-256 with a typo in one round constant, or one that runs only 24 of its 64 compression rounds, is still a well-mixed function and passes every test in the battery. So cryptid also ships <code>kat</code>, a known-answer check against a trusted reference.</p>
         </div>
         <div class="col-cards">
           <div class="threat-card">
@@ -272,7 +272,7 @@
             </tr>
           </tbody>
         </table>
-        <p class="format-note">Measured on a 2-vCPU Linux container (an Apple-silicon laptop is roughly 1.5× faster); 32-bit outputs are several times faster than 256-bit. Pure Python, no dependencies.</p>
+        <p class="format-note">Measured on a 2-vCPU Linux container (an Apple-silicon laptop is roughly 1.5× faster); 32-bit outputs are several times faster than 256-bit. Pure Python; the toolkit itself needs nothing outside the standard library.</p>
       </div>
     </div>
   </section>
@@ -312,7 +312,7 @@
         <div class="finding-card">
           <div class="finding-tag">WHITE-BOX</div>
           <h3>Internal diffusion, measured fairly</h3>
-          <p>With instrumented implementations of six hashes we flip one message bit and watch the difference spread through the internal state. Counted from the round the flipped word <em>enters</em> the state — the comparison the first version of this page got wrong — SHA-3 reaches full diffusion 3 rounds after absorbing the block, SHA-256 reaches 90% 5 rounds after injection, MD5 8, SHA-1 11. SM3's apparent early-round lead over SHA-256 in absolute round counts turns out to be its message expansion injecting each word four rounds early, not faster mixing. Diffusion rate describes a design; it does not rank security.</p>
+          <p>With instrumented implementations of six hashes we flip one message bit and watch the difference spread through the internal state. Counted from the round the flipped word <em>enters</em> the state — the comparison the first version of this page got wrong — SHA-3 is at 99.9% of ideal diffusion 3 rounds after absorbing the block, SHA-256 reaches 90% 5 rounds after injection, MD5 8, SHA-1 11. SM3's apparent early-round lead over SHA-256 in absolute round counts turns out to be its message expansion injecting each word four rounds early, not faster mixing. Diffusion rate describes a design; it does not rank security.</p>
           <div class="finding-verdict">
             <span class="verdict-pass">SHA-3: 3 rounds after absorption</span>
             <span class="verdict-pass">SHA-256: 5 rounds after injection</span>
@@ -332,7 +332,7 @@
         <div class="finding-card">
           <div class="finding-tag">NEGATIVE RESULT</div>
           <h3>What the battery cannot see</h3>
-          <p>SHA-256 with a one-bit typo in round constant K[20]: P = 0.15, every differential test clean, PASS. SHA-256 with only 24 of its 64 rounds — below the best published practical collision attack — PASS. A hash that sorts its input bytes before hashing, so every anagram of a message collides: PASS. These are well-mixed functions with no statistical signature. For implementations, <code>cryptid kat</code> compares against a reference; for the rest, there is no substitute for cryptanalysis.</p>
+          <p>SHA-256 with a one-bit typo in round constant K[20]: P = 0.15, every tier clean, PASS. SHA-256 running only 24 of its 64 rounds — well inside the range of published practical collision attacks, which reached 36 steps with a colliding pair in 2026 — PASS. A hash that sorts its input bytes before hashing, so every anagram of a message collides: PASS. These are well-mixed functions with no statistical signature. For implementations, <code>cryptid kat</code> compares against a reference; for the rest, there is no substitute for cryptanalysis.</p>
           <div class="finding-verdict">
             <span class="verdict-warn">Reduced-round SHA-256: PASS</span>
             <span class="verdict-pass">kat: FAIL (as it should)</span>
@@ -469,10 +469,10 @@
           <p class="hw-card-desc">Write a thin wrapper that reads the JSONL records <code>generate</code> wrote, hashes each plaintext's UTF-8 bytes through the HSM, and writes the record back with the HSM's digest.</p>
           <div class="code-block code-block-sm">
             <code><span class="t-dim"># wrapper.py — calls HSM via pkcs11 library</span><br>
-import pkcs11, json, sys<br>
+import pkcs11, json, os, sys<br>
 lib = pkcs11.lib('/usr/lib/libCryptoki2_64.so')<br>
 token = lib.get_token(token_label='MyHSM')<br>
-with token.open(user_pin='1234') as session:<br>
+with token.open(user_pin=os.environ['HSM_PIN']) as session:<br>
 &nbsp;&nbsp;for line in sys.stdin:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;rec = json.loads(line)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;digest = session.digest(rec['plaintext'].encode('utf-8'), mechanism=pkcs11.Mechanism.SHA256)<br>
@@ -586,8 +586,9 @@ python cryptid.py compare \
       <div class="two-col two-col-reverse">
         <div class="col-text">
           <p>Here's something we want to be upfront about: the lead developer on this project is not a cryptographer. He's not a mathematician. The depth of the methodology in this toolkit — the differential profile, the linear-approximation search, the calibration protocol — goes well beyond his prior expertise. That's the point: cryptid is a deliberate test of our <strong>AI Native development methodology</strong>, pushed into unfamiliar territory to find out where the limits are.</p>
-          <p>Here is what we found. The first version was built with one AI model family. Before announcing it, we handed the code, the paper and this page to a <em>different</em> model family with one instruction: find what's wrong. It verified every hash against published vectors, reproduced our numbers, ran its own experiments — and reported that the code was correct and several of the claims were not. The Jenkins "discovery" was in Wikipedia and SMHasher. The diffusion comparison was confounded. "Double-blind" wasn't. The 93% was a different model's training accuracy. The tool couldn't verify an implementation was faithful, and said it could.</p>
-          <p>Every one of those errors lived in the story told about the code, not in the code. We fixed them — the fixes are in the open repository, the review is published as <a href="https://github.com/r57-labs/cryptid/blob/main/docs/REVIEW.md" target="_blank">docs/REVIEW.md</a>, and every number on this page is now generated from the results files. The lesson we took is procedural: generation and verification are different jobs, and the verifier has to be a different agent, asked to break the work rather than confirm it. That loop is now part of how we build.</p>
+          <p>Here is what we found. The first version was built with Claude Opus. Before announcing it, we handed the code, the paper and this page to Claude Fable 5.1 — a more capable model, from the same vendor — with one instruction: find what's wrong. It checked the hashes against published vectors, reproduced our numbers, ran its own experiments — and reported that the code was correct and several of the claims were not. The Jenkins "discovery" was in Wikipedia and SMHasher. The diffusion comparison was confounded. "Double-blind" wasn't. The 93% was a different model's training accuracy. The tool couldn't verify an implementation was faithful, and said it could. We fixed all of it, published the review as <a href="https://github.com/r57-labs/cryptid/blob/main/docs/REVIEW.md" target="_blank">docs/REVIEW.md</a>, and called the reviewer "a different model family".</p>
+          <p>Then we did it again, with a model from a different vendor — OpenAI's Luna6 — reviewing the fixed version. It found that the code written <em>during</em> the first review had never itself been reviewed: the known-answer command, added to replace a false claim with a real check, reported PASS for an implementation that failed on every message. It found three more fail-open bugs, a tier that tested half of a 512-bit digest while the paper said "every output bit", a collision-attack citation two years out of date, and that "different model family" was an overstatement of its own. That review, our verdict on each finding, and the complete transcript — plain prompts included — are published as <a href="https://github.com/r57-labs/cryptid/blob/main/docs/REVIEW-2.md" target="_blank">docs/REVIEW-2.md</a>. The verdict contract now has regression tests that run on every change.</p>
+          <p>The lesson we took is procedural, and it has two parts. Generation and verification are different jobs, and the verifier has to be a different agent, asked to break the work rather than confirm it. And the fixes a review produces are new work that needs the same treatment — the loop doesn't end when the first reviewer is satisfied. That loop is now part of how we build.</p>
           <p>We still want to hear from people who actually know this field. If you're a cryptographer, a mathematician, or a security researcher and you see something wrong (or something interesting), tell us — a better model, or a better reader, will find things this one missed.</p>
           <div class="ai-native-actions">
             <a href="https://ai-native.r57labs.com/" target="_blank" class="btn btn-outline">
@@ -601,7 +602,7 @@ python cryptid.py compare \
         <div class="col-callout">
           <div class="callout-card">
             <div class="callout-quote">"The errors were in the narrative layer — domain knowledge, literature, interpretation, presentation — not in the mechanical one. The code the first model wrote was right; the story told about it was not checked against the code, the literature, or an adversary."</div>
-            <div class="callout-source">— cryptid whitepaper v2.0, §8 Revision history, October 2026</div>
+            <div class="callout-source">— cryptid whitepaper v2.1, §8.1 Revision history</div>
           </div>
           <div class="callout-card callout-card-sm">
             <div class="callout-icon">🎓</div>
@@ -636,6 +637,7 @@ python cryptid.py compare \
           <a href="#how-it-works">Methodology</a>
           <a href="#findings">Key Findings</a>
           <a href="https://github.com/r57-labs/cryptid/blob/main/docs/REVIEW.md" target="_blank">The v0.1 Review</a>
+          <a href="https://github.com/r57-labs/cryptid/blob/main/docs/REVIEW-2.md" target="_blank">The v0.2 Review</a>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">R57 Labs</div>
