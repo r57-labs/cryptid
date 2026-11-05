@@ -8,3 +8,5 @@ venv/
 .venv/
 *.tmp
 *.bak
+# Uploads
+uploads/
