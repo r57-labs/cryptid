@@ -1,8 +1,10 @@
 # The v0.1 review, and what changed in v0.2
 
-cryptid v0.1 (April 2026) was built by a non-cryptographer working with one AI model family. Before announcing it, the code, whitepaper and site were handed to a *different* model family with one instruction: find what is wrong. The reviewer read every source file, reproduced the headline numbers, verified every hand-rolled hash against published test vectors, and ran targeted experiments where a claim looked shaky.
+cryptid v0.1 (April 2026) was built by a non-cryptographer working with Claude Opus. Before announcing it, the code, whitepaper and site were handed to Claude Fable 5.1 — a more capable model, but from the same vendor — with one instruction: find what is wrong. The reviewer read every source file, reproduced the headline numbers, verified the hand-rolled hashes that have published test vectors against them, and ran targeted experiments where a claim looked shaky.
 
 This document is that review, lightly edited, followed by what was done about each item. It is kept in the repository because the project exists to test a way of working — AI-assisted development in a domain outside the author's expertise — and the honest result of that test is "the code was right, several claims were not, and a second independent pass was what caught it."
+
+> **Read with [REVIEW-2.md](REVIEW-2.md).** v0.2 originally described this review as being by "a different model family". It was not — same vendor, different model — and the second review, by a model from a different vendor, called that out, along with four fail-open bugs in the code this review *added* (the `kat` command among them). The methodology lesson at the end of this file was right as far as it went; the second review extended it.
 
 ## Summary
 
@@ -31,9 +33,9 @@ The four planted weakness families used exactly the features the detectors test,
 SipHash is explicitly a cryptographic PRF/MAC. *v0.2:* corrected.
 
 ### A5. "How do you verify the implementation is faithful?"
-Black-box statistics cannot. A SHA-256 with a one-bit typo in K[20], or with 24 of 64 rounds (below the best published practical collision at 31 steps), passed every cryptid test with P(weakened) ≈ 0.32–0.34. The right tool is a known-answer comparison.
+Black-box statistics cannot. A SHA-256 with a one-bit typo in K[20], or with 24 of 64 rounds (well inside the range of published practical collision attacks — 31 steps in 2024, 36 steps with a colliding pair in 2026), passed the statistical and differential tiers with P(weakened) ≈ 0.32–0.34 (in v0.3, re-run at the full level: all four tiers). The right tool is a known-answer comparison.
 
-*v0.2:* The framing is changed throughout; a `kat` subcommand does known-answer testing of a command or a JSONL file against the built-in reference, with published vectors and padding-boundary messages; the reduced-round result is a stated negative in Limitations.
+*v0.2:* The framing is changed throughout; a `kat` subcommand does known-answer testing of a command or a JSONL file against the built-in reference, with published vectors and padding-boundary messages; the reduced-round result is a stated negative in Limitations. *(v0.3: the `kat` written here shipped with a fail-open bug — it reported PASS for an implementation that failed on every message. See REVIEW-2.md.)*
 
 ### A6. "MIT licensed" with no LICENSE file
 *v0.2:* `LICENSE` added.
@@ -79,3 +81,5 @@ The statistical and differential machinery works as intended; the four non-crypt
 Every error above lives in the narrative layer, not the mechanical one: domain knowledge (SipHash, the Jenkins finalizer — contradicted by the project's own code), literature (Wikipedia and SMHasher already had the Jenkins result), interpretation (the diffusion confound), and marketing (the hero stats). The code that the first model wrote was correct; the story it told about the code was not checked against the code, the literature, or an adversary. The "independent verification" step in v0.1 re-ran the paper's numbers rather than attacking its claims.
 
 The fix is a process one: generation and verification are different jobs. A claims-versus-code pass, a literature check before any "novel", and an adversarial review by a model that did not write the thing — asked to break it, not to confirm it — are now part of how this project is built. This file is the evidence that the loop ran.
+
+What this file did not anticipate: the fixes made in response to a review are themselves new, unreviewed code and new, unreviewed claims. The second review found exactly that. See [REVIEW-2.md](REVIEW-2.md).

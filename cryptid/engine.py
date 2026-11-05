@@ -171,6 +171,9 @@ class AuditResult:
         self.linear: Optional[dict] = None
         self.timings: dict = {}
         self.errors: list[str] = []
+        # Caveats that do not change the verdict but belong next to it
+        # (e.g. "classifier skipped", "N malformed input lines skipped").
+        self.notes: list[str] = []
 
     @property
     def verdict(self) -> str:
@@ -179,6 +182,18 @@ class AuditResult:
         Any phase that failed to run makes the verdict ERROR: a PASS must
         mean every requested test ran and found nothing. (Signals found by
         the phases that did run are still listed in signal_sources.)
+
+        Tier 1 is normally arbitrated by the meta-learner, because its six
+        tests are individually noisy and the classifier is what was
+        calibrated. When the classifier did not run (N below its minimum, or
+        no model), the tests decide instead: any test whose signal strength
+        is above the report's SIGNAL threshold (0.1) makes the verdict WARN,
+        so the verdict can never say PASS above a row that says SIGNAL.
+        (A "marginal" row -- the test's own flag with strength below 0.1,
+        e.g. the mutual-information permutation test at its nominal 1% false
+        positive rate -- does not, and is listed in the notes.) v0.2 ignored
+        the tier entirely in that case and could print PASS above a SIGNAL
+        row (found in the v0.3 review).
         """
         if self.errors:
             return "ERROR"
@@ -194,6 +209,10 @@ class AuditResult:
                 signals.append(("meta_learner", "FAIL", prob))
             elif prob >= threshold:
                 signals.append(("meta_learner", "WARN", prob))
+        elif self.stats:
+            detected = self.detected_statistical_tests
+            if detected:
+                signals.append(("statistical", "WARN", len(detected)))
 
         # Differential profile
         if self.differential and self.differential.get("any_signal"):
@@ -225,11 +244,39 @@ class AuditResult:
         return "WARN"
 
     @property
+    def classifier_skipped(self) -> bool:
+        """True when Tier 1 ran but the meta-learner did not classify it."""
+        return bool(self.stats) and (not self.meta_learner or bool(self.meta_learner.get("skipped")))
+
+    # Display threshold on a test's signal strength: at or above it the report
+    # prints SIGNAL, below it (with the test's own flag set) "marginal".
+    SIGNAL_DISPLAY_THRESHOLD = 0.1
+
+    @property
+    def detected_statistical_tests(self) -> list[str]:
+        """Tier-1 tests at or above the SIGNAL display threshold."""
+        if not self.stats:
+            return []
+        return [name for name, r in self.stats.items()
+                if isinstance(r, dict) and r.get("signal_strength", 0) > self.SIGNAL_DISPLAY_THRESHOLD]
+
+    @property
+    def marginal_statistical_tests(self) -> list[str]:
+        """Tier-1 tests whose own flag fired but below the SIGNAL display threshold."""
+        if not self.stats:
+            return []
+        return [name for name, r in self.stats.items()
+                if isinstance(r, dict) and r.get("signal")
+                and r.get("signal_strength", 0) <= self.SIGNAL_DISPLAY_THRESHOLD]
+
+    @property
     def signal_sources(self) -> list[str]:
         """List which test batteries detected anomalies."""
         sources = []
         if (self.meta_learner and not self.meta_learner.get("skipped")
                 and self.meta_learner.get("probability", 0) >= self.meta_learner.get("threshold", 0.4)):
+            sources.append("statistical")
+        elif self.classifier_skipped and self.detected_statistical_tests:
             sources.append("statistical")
         if self.differential and self.differential.get("any_signal"):
             sources.append("differential")
@@ -254,6 +301,8 @@ class AuditResult:
             "linear_summary": self._linear_summary(),
             "timings": self.timings,
             "errors": self.errors,
+            "notes": self.notes,
+            "classifier_skipped": self.classifier_skipped,
         }
 
     def _stats_summary(self) -> Optional[dict]:
@@ -266,7 +315,7 @@ class AuditResult:
                     "signal": test_result["signal_strength"],
                     # "detected" is the display threshold; "flagged" is the
                     # test's own (looser) decision, which the meta-learner sees.
-                    "detected": test_result["signal_strength"] > 0.1,
+                    "detected": test_result["signal_strength"] > self.SIGNAL_DISPLAY_THRESHOLD,
                     "flagged": bool(test_result.get("signal", False)),
                 }
         return summary
@@ -304,6 +353,9 @@ class AuditResult:
             "max_bias": self.linear.get("max_bias", 0),
             "detected": self.linear.get("signal_detected", self.linear.get("signal", False)),
             "n_significant": self.linear.get("n_significant", 0),
+            "n_input_bits": self.linear.get("n_input_bits"),
+            "n_output_bits": self.linear.get("n_output_bits"),
+            "total_tests": self.linear.get("total_tests"),
         }
 
 
@@ -361,6 +413,13 @@ def run_audit(
                     "skipped": True,
                     "reason": f"insufficient samples ({result.n_samples} < {META_LEARNER_MIN_SAMPLES})",
                 }
+                result.notes.append(f"statistical tier unclassified: {result.n_samples:,} samples < "
+                                    f"{META_LEARNER_MIN_SAMPLES:,} needed by the meta-learner; "
+                                    f"a SIGNAL row in that tier makes the verdict WARN")
+                marginal = result.marginal_statistical_tests
+                if marginal:
+                    result.notes.append("marginal (below the SIGNAL threshold, not counted): "
+                                        + ", ".join(marginal))
             else:
                 if model_path is None:
                     model_path = _find_default_model()

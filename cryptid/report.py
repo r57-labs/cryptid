@@ -107,6 +107,8 @@ def print_verdict(result) -> None:
 
     if verdict == "PASS":
         msg = "No anomalies detected"
+        if getattr(result, "classifier_skipped", False):
+            msg += " (statistical tier unclassified)"
     elif verdict == "WARN":
         msg = f"Potential anomalies in: {', '.join(result.signal_sources)}"
     elif verdict == "FAIL":
@@ -116,15 +118,16 @@ def print_verdict(result) -> None:
         if result.signal_sources:
             msg += f" (signals in: {', '.join(result.signal_sources)})"
 
-    box_width = 58
-    print(f"  ┌{'─' * box_width}┐")
-    inner = f"  Verdict: {verdict}  —  {msg}"
-    # Can't easily measure ANSI-colored string width, so use uncolored for padding
     inner_plain = f"  Verdict: {verdict}  —  {msg}"
+    box_width = max(58, len(inner_plain) + 2)
+    print(f"  ┌{'─' * box_width}┐")
+    # Can't easily measure ANSI-colored string width, so use uncolored for padding
     pad = box_width - len(inner_plain)
     # Print with color
     print(f"  │  Verdict: {v_colored}  —  {msg}{' ' * max(0, pad)}│")
     print(f"  └{'─' * box_width}┘")
+    for note in getattr(result, "notes", []) or []:
+        print(f"  {Colors.dim('note: ' + note)}")
     print()
 
 
@@ -343,8 +346,11 @@ def print_comparison_report(result_a, result_b, level: str = "standard") -> None
             print(f"    {display:<22}  A: {sig_a:.3f}  B: {sig_b:.3f}{diff_indicator}")
         print()
 
-    # Overall divergence assessment
-    if result_a.meta_learner and result_b.meta_learner:
+    # Overall divergence assessment — only meaningful when the classifier
+    # ran on both sides (v0.2 printed "behave consistently (ΔP = 0.000)"
+    # for two one-record files, both skipped).
+    if (result_a.meta_learner and result_b.meta_learner
+            and not result_a.meta_learner.get("skipped") and not result_b.meta_learner.get("skipped")):
         pa = result_a.meta_learner.get("probability", 0)
         pb = result_b.meta_learner.get("probability", 0)
         diff = abs(pa - pb)
@@ -354,6 +360,9 @@ def print_comparison_report(result_a, result_b, level: str = "standard") -> None
             print(f"  {Colors.yellow('~')} Minor behavioral difference (ΔP = {diff:.3f})")
         else:
             print(f"  {Colors.green('✓')} Implementations behave consistently (ΔP = {diff:.3f})")
+        print()
+    else:
+        print(f"  {Colors.dim('Statistical comparison not available: the classifier needs 2,000+ records on each side.')}")
         print()
 
 

@@ -139,7 +139,7 @@ def build(out_path):
     # --- Title block ---
     story.append(P("Empirical Detection of Statistical and Differential Weaknesses in Hash Functions", TITLE))
     story.append(P("A black-box toolkit, its calibration, and what it cannot see", SUBTITLE))
-    story.append(P("John &amp; Claude | R57 Labs | Version 2.0, October 2026 (v1.0: April 2026)", BYLINE))
+    story.append(P("John &amp; Claude | R57 Labs | Version 2.1, November 2026 (v2.0: October 2026; v1.0: April 2026)", BYLINE))
 
     story.append(P("<b>Abstract</b>", H2))
     story.append(P(
@@ -149,7 +149,8 @@ def build(out_path):
         f"Criteria) over chosen inputs; extended structural tests (near-collisions, sequence correlation, cycles); "
         f"and an exhaustive low-weight linear-approximation search. A separate known-answer mode checks "
         f"implementations of standard algorithms against a reference, because no statistical test can: SHA-256 "
-        f"with a corrupted round constant, or with 24 of its 64 rounds, passes the entire battery. We calibrate "
+        f"with a corrupted round constant, or one that runs only 24 of its 64 rounds, passes the entire battery at "
+        f"the full level. We calibrate "
         f"the classifier on four planted-weakness families and report its accuracy on variants generated from "
         f"unseen seeds ({pct(ev['accuracy'])} accuracy, {conf['fp']} false positives, {pct(ev['recall'])} "
         f"recall on {ev['n_examples']} variants), then test generalization on five weakness types the detectors "
@@ -159,12 +160,15 @@ def build(out_path):
         f"well-designed ones (MurmurHash3, SipHash-2-4) are not. Jenkins one-at-a-time, whose weak final-byte "
         f"avalanche is well documented, serves as a positive control: invisible to aggregate statistics, caught "
         f"by the differential tier. White-box diffusion curves for six hashes, aligned on the round at which a "
-        f"flipped message word enters the state, put SHA-3 at full diffusion {diff['sha3_256']['aligned_rounds_to_90pct']} "
-        f"rounds after absorption and SHA-256 at 90% {diff['sha256']['aligned_rounds_to_90pct']} rounds after "
+        f"flipped message word enters the state, put SHA-3 at {pct(diff['sha3_256']['aligned_at_3'])} of ideal diffusion "
+        f"{diff['sha3_256']['aligned_rounds_to_90pct']} rounds after absorption and SHA-256 at 90% "
+        f"{diff['sha256']['aligned_rounds_to_90pct']} rounds after "
         f"injection, MD5 at {diff['md5']['aligned_rounds_to_90pct']} and SHA-1 at {diff['sha1']['aligned_rounds_to_90pct']}; "
         f"they also show that SM3's apparent early-round advantage in absolute round counts is a message-expansion "
-        f"effect, not faster mixing. This revision follows an independent review of version 1.0 that found the "
-        f"code correct and several of its claims wrong; Section 8 lists them.", ABSTRACT))
+        f"effect, not faster mixing. Version 2.0 followed an adversarial review of version 1.0 by a second AI model that "
+        f"found the code correct and several claims wrong; this revision follows a review of version 2.0 by a model "
+        f"from a different vendor, which found fail-open bugs in the code the first review had added, a coverage gap, "
+        f"and further overstated claims. Section 8 lists both.", ABSTRACT))
     story.append(P("<b>Keywords:</b> hash function testing, statistical testing, differential cryptanalysis, "
                    "strict avalanche criterion, known-answer testing, diffusion analysis, AI-assisted development",
                    SMALL))
@@ -195,13 +199,14 @@ def build(out_path):
         "For the second question the toolkit provides a known-answer mode (<i>kat</i>) and an output "
         "comparison mode (<i>compare</i>). Section 3.4 shows why they are not optional: a SHA-256 with a one-bit "
         "typo in a round constant, or with its round count cut from 64 to 24, is still a well-mixed function and "
-        "passes every statistical and differential test we run. Statistical quality and correctness are "
-        "different properties."))
+        "passes every test in the battery. Statistical quality and correctness are different properties."))
     story.append(P(
         "The toolkit was built by a non-cryptographer working with AI assistance, as a deliberate test of that "
-        "way of working. Version 1.0 was then reviewed adversarially by a second, independent model before "
-        "publication. The review found the code correct and a number of the claims around it overstated or wrong. "
-        "Section 8 lists them and what changed; the full review is in the repository."))
+        "way of working. Version 1.0 was reviewed adversarially by a second, more capable model from the same vendor "
+        "before publication; it found the code correct and a number of the claims around it overstated or wrong. "
+        "Version 2.0 was then reviewed by a model from a different vendor, which found that the code added during the "
+        "first review had not itself been reviewed, and that it contained fail-open bugs. Section 8 lists both "
+        "reviews and what changed; the full reviews, including the second one's transcript, are in the repository."))
 
     # --- 2 Methodology ---
     story.append(P("2. Methodology", H1))
@@ -217,7 +222,8 @@ def build(out_path):
         ["Tier", "Tests", "Needs", "Asks"],
         ["1  Statistical suite", "bit correlation (every input × output bit) · output entropy · inter-record distance · "
          "conditional byte frequency · mutual information (permutation-tested) · multi-byte interaction "
-         "(byte parities, pair/triple XOR and sum features × every output bit) + logistic-regression classifier",
+         "(byte parities, XOR features of byte pairs and triples, sum-parity features of byte pairs, each × every "
+         "output bit) + logistic-regression classifier",
          "records", "Does the output look random?"],
         ["2  Differential profile", "single-bit differential matrix (SAC) · byte-level differential · Hamming-distance profile "
          "at input distances 1, 2, 4, 8, 16 · differential bit independence (BIC) over all output-bit pairs",
@@ -226,7 +232,7 @@ def build(out_path):
          "fixed-point detection (Floyd)", "callable", "Is there sequence or cycle structure?"],
         ["4  Linear approximation", "bias of parity(input mask) = parity(output mask) for all 1-, 2- and 3-bit input masks × "
          "every output bit, every input bit × all 2-bit output masks, sampled 2×2 masks, byte-parity masks "
-         "(~25M approximations for a 256-bit digest)", "callable", "Is there a linear bias?"],
+         "(~25M approximations for a 256-bit digest, ~54M for 512)", "callable", "Is there a linear bias?"],
     ], [1.15 * inch, 3.75 * inch, 0.65 * inch, 1.45 * inch]))
     story.append(P("Table 1. The four tiers. Levels: <i>quick</i> = tier 1; <i>standard</i> = tiers 1–2; "
                    "<i>full</i> = all four.", CAPTION))
@@ -268,8 +274,11 @@ def build(out_path):
         "distance and run lengths. Cycle detection iterates the function from random starting points with Floyd's "
         "algorithm. The linear-approximation tier, in the spirit of Matsui's linear cryptanalysis, evaluates the bias "
         "|P(parity(input mask) = parity(output mask)) − 1/2| with mask parities computed as big-integer bitset "
-        "operations, which makes exhaustive coverage of all 1-, 2- and 3-bit input masks affordable; a signal requires "
-        "the maximum bias to exceed 10/√N or the count of p&lt;0.001 approximations to exceed five times its expectation. "
+        "operations, which makes exhaustive coverage of all 1-, 2- and 3-bit input masks affordable. A signal is any of "
+        "three conditions: the maximum bias exceeds 10/√N; the count of p&lt;0.001 approximations exceeds five times its "
+        "chance expectation (and ten); or the count of such approximations with a multi-bit mask on either side exceeds "
+        "three times its expectation (and ten). Version 2.0 stated only the first two, and capped the output masks at "
+        "256 bits, so the 512-bit digests in Table 5 were half-covered by this tier; both are corrected in this revision. "
         "On a correct function the count of nominally significant approximations matches expectation to within a few "
         "percent, which is the check that the thresholds are calibrated."))
 
@@ -280,8 +289,12 @@ def build(out_path):
         "\"abc\", the NIST 448- and 896-bit messages) and random messages at padding-boundary lengths (55, 56, 63, 64, "
         "65, 111, 112, 127, 128, 135, 136 bytes and others), reporting the first differing digit of any mismatch. "
         "<i>compare</i> diffs two output files on their shared inputs and exits non-zero on any disagreement. The "
-        "hand-rolled built-ins (SipHash-2-4, MurmurHash3, FNV-1a, Jenkins OAT, DJB2, CRC32, Adler-32) are themselves "
-        "checked against published vectors on every run."))
+        "hand-rolled built-ins with published vectors (SipHash-2-4, MurmurHash3, FNV-1a, Jenkins OAT, DJB2, CRC32, "
+        "Adler-32) are checked against them by <i>kat --self-check</i> and on every continuous-integration run; "
+        "Pearson-64 is this project's own construction and has none. <i>kat</i> reports ERROR, not PASS, when the "
+        "implementation under test cannot be run on any message, and <i>compare</i> reports INCONCLUSIVE when the "
+        "two files share no inputs; version 2.0 did neither (§8.2). A finite set of known answers shows agreement on "
+        "the messages checked, which is what a conformance check is; it does not prove agreement on every message."))
 
     # --- 3 Calibration ---
     story.append(P("3. Calibration and validation", H1))
@@ -370,17 +383,26 @@ def build(out_path):
         "stated by example."))
 
     story.append(P("3.4 Unfaithful implementations", H2))
-    rows = [["Implementation", "Statistical P", "Differential", "Verdict"]]
+    rows = [["Implementation", "Statistical P", "Differential", "Extended", "Linear", "Verdict"]]
     for r in impl_rows:
         ml = r.get("meta_learner") or {}
         d = r.get("differential_summary") or {}
+        e = r.get("extended_summary") or {}
         dmark = ", ".join(k.replace("_", " ") for k, v in d.items() if v.get("detected")) or "—"
-        rows.append([r["name"], f"{ml.get('probability', 0):.3f}", dmark, r["verdict"]])
-    story.append(table(rows, [2.3 * inch, 1.0 * inch, 2.2 * inch, 0.8 * inch], center_cols=(1, 3)))
-    story.append(P(f"Table 4. SHA-256 variants that are not SHA-256, standard level, N = {oof['args']['impl_samples']:,}. "
-                   f"All pass. 24-step SHA-256 is below the best published practical collision attack (31 steps).", CAPTION))
+        emark = ", ".join(k.replace("_", " ") for k, v in e.items() if v.get("detected")) or "—"
+        lmark = "signal" if (r.get("linear_summary") or {}).get("detected") else "—"
+        rows.append([r["name"], f"{ml.get('probability', 0):.3f}", dmark, emark, lmark, r["verdict"]])
+    story.append(table(rows, [2.0 * inch, 0.9 * inch, 1.3 * inch, 1.1 * inch, 0.6 * inch, 0.7 * inch],
+                       center_cols=(1, 4, 5)))
+    impl_level = oof["args"].get("impl_level", "standard")
+    story.append(P(f"Table 4. SHA-256 variants that are not SHA-256, {impl_level} level, N = {oof['args']['impl_samples']:,}. "
+                   f"All pass every tier. (Version 2.0 ran these at the standard level and said \"entire battery\".) For scale, "
+                   f"the best published collision attacks on SHA-256 reach 31 steps at practical cost (Li, Liu and Wang, "
+                   f"Eurocrypt 2024), 36 steps with a published colliding pair at 2^57 (Li et al., IACR ePrint 2026/1120, "
+                   f"June 2026) and 38 steps at a theoretical 2^104; 24 rounds is well inside the practically broken range.",
+                   CAPTION))
     story.append(P(
-        "Every variant in Table 4 passes. A corrupted constant or a shortened round count leaves a function that is "
+        "Every variant in Table 4 passes every tier. A corrupted constant or a shortened round count leaves a function that is "
         "still a good pseudo-random mapping; nothing in its input/output behaviour says \"not the standard\". The only "
         "detector is disagreement with a reference on the same inputs, which is what <i>kat</i> and <i>compare</i> "
         "test, and why the toolkit no longer describes the statistical battery as a way to verify that an "
@@ -478,7 +500,8 @@ def build(out_path):
                    f"function and depends on when the flipped word is absorbed; \"aligned\" counts from the round the "
                    f"flipped word enters the state.", CAPTION))
     story.append(P(
-        f"Aligned, the picture is simpler and smaller than version 1.0 made it. Keccak-f reaches full diffusion "
+        f"Aligned, the picture is simpler and smaller than version 1.0 made it. Keccak-f is at "
+        f"{pct(diff['sha3_256']['aligned_at_3'])} of the ideal distance "
         f"{diff['sha3_256']['aligned_rounds_to_90pct']} rounds after absorption, consistent with its designers' "
         f"analysis. SHA-256 reaches 90% {diff['sha256']['aligned_rounds_to_90pct']} rounds after a word enters "
         f"({pct(diff['sha256']['aligned_at_5'])} at +5), not 16. SM3's absolute lead over SHA-256 in version 1.0 "
@@ -529,8 +552,9 @@ def build(out_path):
         "SMHasher (Appleby; maintained fork by Urban) is the standard quality suite for non-cryptographic hash "
         "functions and includes avalanche, bit-independence, differential, sparse-key and distribution tests; it "
         "requires the function to be compiled in as C/C++, and its published results already record Jenkins "
-        "one-at-a-time's failures. cryptid trades SMHasher's depth for black-box access — anything that returns a digest "
-        "can be tested, including hardware — and adds the record-based statistical screening, the classifier, and the "
+        "one-at-a-time's failures. cryptid trades SMHasher's depth for black-box access — any function whose outputs can "
+        "be collected gets the statistical tier, and any function that can be called gets all four, hardware included — "
+        "and adds the record-based statistical screening, the classifier, and the "
         "known-answer workflow for implementations. The NIST Statistical Test Suite (SP 800-22), Dieharder and TestU01 "
         "evaluate the randomness of a bit stream rather than an input→output relationship. The Strict Avalanche and Bit "
         "Independence Criteria are due to Webster and Tavares (1985); our tier 2 is an empirical evaluation of both. "
@@ -539,11 +563,13 @@ def build(out_path):
         "Keccak team's own documentation describes the permutation's diffusion, with which Table 6 agrees."))
 
     # --- 8 Revision history ---
-    story.append(P("8. Revision history: what the review found", H1))
+    story.append(P("8. Revision history: what the reviews found", H1))
+    story.append(P("8.1 The first review (version 1.0 → 2.0)", H2))
     story.append(P(
-        "Version 1.0 of this paper, the toolkit and its website were reviewed before announcement by a model from a "
-        "different family than the one that helped build them, with the instruction to find what was wrong. The "
-        "review verified every hand-rolled hash against published vectors, reproduced the headline numbers, and ran "
+        "Version 1.0 of this paper, the toolkit and its website were built with Claude Opus and reviewed before "
+        "announcement by Claude Fable 5.1 — a more capable model from the same vendor, not, as version 2.0 said, a "
+        "model from a different family — with the instruction to find what was wrong. The review verified the "
+        "hand-rolled hashes that have published vectors against them, reproduced the headline numbers, and ran "
         "experiments where a claim looked weak. It found the code correct and the following claims not:"))
     for item in [
         "Jenkins OAT's weakness was called \"previously uncharacterized\" and attributed to a missing final mixing "
@@ -568,13 +594,62 @@ def build(out_path):
     ]:
         story.append(P(f"• {item}", SMALL))
     story.append(P(
-        "The pattern is worth stating because it is the result of the experiment this project set out to run. The "
-        "errors were in the narrative layer — domain knowledge, literature, interpretation, presentation — not in the "
-        "mechanical one. The code the first model wrote was right; the story told about it was not checked against the "
-        "code, the literature, or an adversary. A second independent pass, asked to break the work rather than confirm "
-        "it, found the problems in an afternoon. We take the lesson to be procedural: generation and verification are "
-        "different jobs, and the verification job needs a different agent and a different instruction. The complete "
-        "review and change list are in the repository (docs/REVIEW.md)."))
+        "The errors were in the narrative layer — domain knowledge, literature, interpretation, presentation — not in "
+        "the mechanical one. The code the first model wrote was right; the story told about it was not checked against "
+        "the code, the literature, or an adversary. The complete review and change list are in the repository "
+        "(docs/REVIEW.md)."))
+
+    story.append(P("8.2 The second review (version 2.0 → 2.1)", H2))
+    story.append(P(
+        "Version 2.0 was reviewed by OpenAI's Luna6 (Codex) in November 2026, from the public repository, the paper's "
+        "text and the live site, in three passes. It confirmed the fourteen-test structure, the stored results against "
+        "the README, the held-out classifier figures (recomputed), eighteen embedded vectors across thirteen algorithms, "
+        "and six instrumented implementations against hashlib. It found the following, every item of which we "
+        "reproduced; the first four are fail-open bugs in code that the first review had added and that had not itself "
+        "been reviewed:"))
+    for item in [
+        "<i>kat</i> reported PASS for an implementation that failed on every message, because the reference's own "
+        "published-vector check was pooled with the external checks; it also reported PASS with no implementation "
+        "given. Fixed: the counts are separate, any failed invocation is ERROR, and a target is required unless "
+        "<i>--self-check</i> is asked for.",
+        "<i>compare</i> exited 0, printing \"implementations behave consistently\", when the two files shared no inputs "
+        "and nothing had been compared. Fixed: INCONCLUSIVE, exit 3.",
+        "Below the classifier's 2,000-sample minimum, <i>test</i> ignored tier 1 and could print PASS above a row "
+        "marked SIGNAL. Fixed: a SIGNAL row makes the verdict WARN and the tier is reported as unclassified. The "
+        "example the review used (CRC32's entropy at N = 200) turned out to be a second bug: the entropy test's fixed "
+        "7.5-bit byte threshold flagged every correct function at that N, since 200 samples cannot show more than "
+        "log2(200) = 7.64 bits. The threshold now follows the Miller–Madow bias below N ≈ 1,000 and is unchanged above.",
+        "Unusable input lines were skipped with a warning and not mentioned in the verdict. Fixed: an error unless "
+        "<i>--skip-malformed</i>, which records the count in the result.",
+        "The linear tier capped output masks at 256 bits, so the two 512-bit digests and their oracle control were "
+        "half-covered while the paper said \"every output bit\". Fixed; those three rows of Table 5 were re-run.",
+        "The abstract said the unfaithful SHA-256 variants passed \"the entire battery\"; the saved run was the "
+        "standard level. They have now been run at the full level (Table 4).",
+        "The tier-4 signal rule was stated with two conditions; the code has three. The interaction test was described "
+        "as having sum features for triples; it has them for pairs only. \"Full diffusion\" for SHA-3 at +3 rounds is "
+        "99.9% of the ideal distance. All restated.",
+        "\"Best published practical collision attack: 31 steps\" was out of date: a June 2026 preprint reports a "
+        "36-step SHA-256 collision with a published colliding pair (ePrint 2026/1120). Updated, with the complexities.",
+        "\"Reviewed by a different model family\" overstated the first review's independence (same vendor). "
+        "\"Every hand-rolled implementation is checked against published vectors\" was false for Pearson-64, which "
+        "has none. \"Standard library only\" omitted matplotlib and ReportLab for the figures and this paper. The site's "
+        "\"anything that returns a digest\" needed the tier-1-only qualifier for record files. All restated.",
+        "The six neural-probe research scripts from the project's earlier phases have methodological flaws (candidate "
+        "selection on the full dataset before a split; records reused across train and test; a loss that includes "
+        "prompt tokens). Nothing published rests on them; they are moved to experiments/legacy/ with those flaws listed.",
+    ]:
+        story.append(P(f"• {item}", SMALL))
+    story.append(P(
+        "The pattern across both reviews is the result of the experiment this project set out to run. The first review "
+        "found narrative errors around correct code. The second found mechanical errors in code written <i>during</i> "
+        "the first review — the known-answer command was added to fix a false claim and shipped with a fail-open bug "
+        "that made its own verdict unreliable — plus a literature update the first reviewer's knowledge did not reach. "
+        "We take two lessons. Generation and verification are different jobs, and the verifier must be a different "
+        "agent with a different instruction. And code written in the course of a review is new code: it needs the same "
+        "adversarial pass as the original, which is why the toolkit now carries regression tests for its verdict "
+        "contract and runs them, with the published-vector self-checks and the positive controls, on every change. "
+        "The second review's findings, our verdict on each, and the complete transcript are in the repository "
+        "(docs/REVIEW-2.md)."))
 
     # --- 9 Conclusion ---
     story.append(P("9. Conclusion and future work", H1))
@@ -589,8 +664,8 @@ def build(out_path):
         "calibration on additional input distributions, and a reference corpus of real-world hash implementations "
         "with known defects."))
     story.append(Spacer(1, 10))
-    story.append(P("Source code, models, experiment scripts, the JSON results behind every table, and the v1.0 review "
-                   "are at github.com/r57-labs/cryptid. Contact: mail@r57labs.com", SMALL))
+    story.append(P("Source code, models, experiment scripts, the JSON results behind every table, both reviews and the "
+                   "second review's transcript are at github.com/r57-labs/cryptid. Contact: mail@r57labs.com", SMALL))
 
     doc = SimpleDocTemplate(out_path, pagesize=letter, leftMargin=0.9 * inch, rightMargin=0.9 * inch,
                             topMargin=0.8 * inch, bottomMargin=0.8 * inch,
@@ -601,7 +676,7 @@ def build(out_path):
         canvas.saveState()
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(colors.HexColor("#666666"))
-        canvas.drawString(0.9 * inch, 0.5 * inch, "cryptid whitepaper v2.0 — R57 Labs — October 2026")
+        canvas.drawString(0.9 * inch, 0.5 * inch, "cryptid whitepaper v2.1 — R57 Labs — November 2026")
         canvas.drawRightString(letter[0] - 0.9 * inch, 0.5 * inch, f"{doc_.page}")
         canvas.restoreState()
 

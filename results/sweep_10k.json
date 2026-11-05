@@ -134,11 +134,11 @@
       "output_bits": 512,
       "n_samples": 10000,
       "meta_learner": {
-        "probability": 0.09716038527989983,
+        "probability": 0.09716038527990063,
         "predicted_label": 0,
         "label": "clean",
         "threshold": 0.4,
-        "confidence": 0.504732691200167,
+        "confidence": 0.5047326912001657,
         "verdict": "CLEAN \u2014 no anomaly detected",
         "top_features": [
           {
@@ -233,18 +233,23 @@
         }
       },
       "linear_summary": {
-        "max_bias": 0.0279,
+        "max_bias": 0.028,
         "detected": false,
-        "n_significant": 24293
+        "n_significant": 54103,
+        "n_input_bits": 80,
+        "n_output_bits": 512,
+        "total_tests": 54293600
       },
       "timings": {
-        "statistical": 6.974249362945557,
-        "differential": 20.57454824447632,
-        "extended": 41.827534198760986,
-        "linear": 43.87457323074341
+        "statistical": 9.234015464782715,
+        "differential": 25.80078387260437,
+        "extended": 49.81560397148132,
+        "linear": 101.5907781124115
       },
       "errors": [],
-      "wall_seconds": 113.3,
+      "notes": [],
+      "classifier_skipped": false,
+      "wall_seconds": 186.4,
       "category": "hash"
     },
     "sha1": {
@@ -734,11 +739,11 @@
       "output_bits": 512,
       "n_samples": 10000,
       "meta_learner": {
-        "probability": 0.09528028264207605,
+        "probability": 0.09528028264207708,
         "predicted_label": 0,
         "label": "clean",
         "threshold": 0.4,
-        "confidence": 0.50786619559654,
+        "confidence": 0.5078661955965382,
         "verdict": "CLEAN \u2014 no anomaly detected",
         "top_features": [
           {
@@ -833,18 +838,23 @@
         }
       },
       "linear_summary": {
-        "max_bias": 0.0275,
+        "max_bias": 0.0279,
         "detected": false,
-        "n_significant": 24523
+        "n_significant": 54161,
+        "n_input_bits": 80,
+        "n_output_bits": 512,
+        "total_tests": 54293600
       },
       "timings": {
-        "statistical": 6.966055154800415,
-        "differential": 18.732773303985596,
-        "extended": 45.121121883392334,
-        "linear": 40.35863161087036
+        "statistical": 8.520269870758057,
+        "differential": 25.87271213531494,
+        "extended": 57.273988246917725,
+        "linear": 108.96595525741577
       },
       "errors": [],
-      "wall_seconds": 111.2,
+      "notes": [],
+      "classifier_skipped": false,
+      "wall_seconds": 200.6,
       "category": "hash"
     },
     "blake2b": {
@@ -3639,11 +3649,11 @@
       "output_bits": 512,
       "n_samples": 10000,
       "meta_learner": {
-        "probability": 0.08535915018288465,
+        "probability": 0.0853591501828845,
         "predicted_label": 0,
         "label": "clean",
         "threshold": 0.4,
-        "confidence": 0.524401416361859,
+        "confidence": 0.5244014163618592,
         "verdict": "CLEAN \u2014 no anomaly detected",
         "top_features": [
           {
@@ -3738,19 +3748,35 @@
         }
       },
       "linear_summary": {
-        "max_bias": 0.0279,
+        "max_bias": 0.0281,
         "detected": false,
-        "n_significant": 24370
+        "n_significant": 54162,
+        "n_input_bits": 80,
+        "n_output_bits": 512,
+        "total_tests": 54293600
       },
       "timings": {
-        "statistical": 7.285391569137573,
-        "differential": 20.734236478805542,
-        "extended": 59.0562846660614,
-        "linear": 42.31529521942139
+        "statistical": 8.804832220077515,
+        "differential": 26.23453187942505,
+        "extended": 83.74785161018372,
+        "linear": 94.66117024421692
       },
       "errors": [],
-      "wall_seconds": 129.4,
+      "notes": [],
+      "classifier_skipped": false,
+      "wall_seconds": 213.4,
       "category": "control"
     }
-  }
+  },
+  "reruns": [
+    {
+      "date": "2026-11-05",
+      "algorithms": [
+        "sha512",
+        "sha3_512",
+        "random_oracle_512"
+      ],
+      "reason": "see docs/REVIEW-2.md"
+    }
+  ]
 }

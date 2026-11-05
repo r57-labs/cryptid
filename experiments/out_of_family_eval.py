@@ -19,6 +19,12 @@ not the standard one.
 Usage:
   python experiments/out_of_family_eval.py --samples 5000 --output results/out_of_family.json
   python experiments/out_of_family_eval.py --samples 5000 --implementation-variants --impl-samples 2000
+  python experiments/out_of_family_eval.py --impl-only --impl-level full --merge-into results/out_of_family.json
+
+--impl-only runs just the unfaithful-SHA-256 variants (pure Python: about half
+an hour per variant at the full level); --merge-into replaces that section of
+an existing results file and records the run. v0.2's file held a standard-level
+run of these while the paper said "entire battery"; v0.3 re-ran them at full.
 """
 
 import argparse
@@ -140,6 +146,10 @@ def main():
                     help="also run the (slow, pure-Python) unfaithful SHA-256 variants")
     ap.add_argument("--impl-samples", type=int, default=2000)
     ap.add_argument("--impl-level", default="standard", choices=["quick", "standard", "full"])
+    ap.add_argument("--impl-only", action="store_true",
+                    help="run only the implementation variants (implies --implementation-variants)")
+    ap.add_argument("--merge-into", default=None,
+                    help="existing results JSON whose implementation_variants section is replaced")
     ap.add_argument("--output", default=None, help="write all results as JSON")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
@@ -156,17 +166,18 @@ def main():
     for key, cls in OUT_OF_FAMILY.items():
         variants.append((key, cls(seed + b"-" + key.encode())))
 
-    print(f"Out-of-family evaluation: {len(variants)} variants x level={args.level} x {args.samples} samples")
     rows = []
-    for name, fn in variants:
-        print(f"  running {name} ...", end="", flush=True)
-        d = audit(name, fn, args.samples, args.level, verbose=args.verbose)
-        print(f" {d['verdict']} ({d['wall_seconds']}s)")
-        rows.append(d)
-    print_matrix(rows, f"Out-of-family planted weaknesses — level={args.level}, n={args.samples}")
+    if not args.impl_only:
+        print(f"Out-of-family evaluation: {len(variants)} variants x level={args.level} x {args.samples} samples")
+        for name, fn in variants:
+            print(f"  running {name} ...", end="", flush=True)
+            d = audit(name, fn, args.samples, args.level, verbose=args.verbose)
+            print(f" {d['verdict']} ({d['wall_seconds']}s)")
+            rows.append(d)
+        print_matrix(rows, f"Out-of-family planted weaknesses — level={args.level}, n={args.samples}")
 
     impl_rows = []
-    if args.implementation_variants:
+    if args.implementation_variants or args.impl_only:
         impl = [
             ("sha256 correct (pure py)", make_sha256_variant()),
             ("sha256 K[20] 1-bit typo", make_sha256_variant(corrupt_k=20)),
@@ -188,6 +199,21 @@ def main():
             json.dump({"args": vars(args), "out_of_family": rows, "implementation_variants": impl_rows},
                       f, indent=2, default=str)
         print(f"\nResults saved to {args.output}")
+
+    if args.merge_into and impl_rows:
+        with open(args.merge_into) as f:
+            existing = json.load(f)
+        existing["implementation_variants"] = impl_rows
+        existing["args"]["impl_level"] = args.impl_level
+        existing["args"]["impl_samples"] = args.impl_samples
+        existing["args"]["implementation_variants"] = True
+        existing.setdefault("reruns", []).append({
+            "date": time.strftime("%Y-%m-%d"), "section": "implementation_variants",
+            "level": args.impl_level, "samples": args.impl_samples, "reason": "see docs/REVIEW-2.md",
+        })
+        with open(args.merge_into, "w") as f:
+            json.dump(existing, f, indent=2, default=str)
+        print(f"Replaced implementation_variants in {args.merge_into}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    name: Regression tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit and CLI regression tests
+        run: python -m unittest discover -s tests -v
+
+  self-checks:
+    name: Known answers and positive controls
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Built-in references against their published vectors
+        run: |
+          for a in sha256 sha512 sha1 md5 sha3_256 siphash24 murmur3_32 fnv1a_32 fnv1a_64 jenkins djb2 crc32 adler32; do
+            python cryptid.py kat -a "$a" --self-check -q
+          done
+      - name: SHA-256 as an external command agrees with the reference
+        run: python cryptid.py kat -a sha256 --command "sha256sum" -q
+      - name: A correct function passes (exit 0)
+        run: python cryptid.py test -a sha256 -n 2000 --level standard -q
+      - name: The positive controls fail (exit 2)
+        run: |
+          set +e
+          python cryptid.py test -a jenkins -n 2000 --level standard -q; j=$?
+          python cryptid.py test -a crc32   -n 2000 --level standard -q; c=$?
+          set -e
+          echo "jenkins exit=$j crc32 exit=$c"
+          test "$j" -eq 2 && test "$c" -eq 2

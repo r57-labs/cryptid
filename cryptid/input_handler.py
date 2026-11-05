@@ -18,14 +18,21 @@ import sys
 from typing import Callable, Optional
 
 
-def load_jsonl(filepath: str) -> list[dict]:
+def load_jsonl(filepath: str, skipped: list = None) -> list[dict]:
     """Load input/output pairs from a JSONL file.
 
     Accepts records with fields:
       - plaintext/input + hash/output/digest
     Normalizes to {"plaintext": str, "hash": str} format.
+
+    Lines that cannot be used are recorded in `skipped` (a list of
+    (line number, reason) tuples) when one is given; the caller decides
+    whether skipping is acceptable. v0.2 only printed a warning and ran on
+    whatever loaded, so a verdict could be a PASS on part of a file.
     """
     records = []
+    if skipped is None:
+        skipped = []
     with open(filepath) as f:
         for lineno, line in enumerate(f, 1):
             line = line.strip()
@@ -34,7 +41,10 @@ def load_jsonl(filepath: str) -> list[dict]:
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError as e:
-                print(f"Warning: skipping malformed line {lineno}: {e}", file=sys.stderr)
+                skipped.append((lineno, f"malformed JSON: {e}"))
+                continue
+            if not isinstance(rec, dict):
+                skipped.append((lineno, "not a JSON object"))
                 continue
 
             # Normalize field names
@@ -42,7 +52,7 @@ def load_jsonl(filepath: str) -> list[dict]:
             hash_val = rec.get("hash") or rec.get("output") or rec.get("digest", "")
 
             if not hash_val:
-                print(f"Warning: skipping line {lineno}: no hash/output field", file=sys.stderr)
+                skipped.append((lineno, "no hash/output/digest field"))
                 continue
 
             records.append({"plaintext": str(plaintext), "hash": str(hash_val)})
@@ -50,9 +60,11 @@ def load_jsonl(filepath: str) -> list[dict]:
     return records
 
 
-def load_hex_pairs(filepath: str) -> list[dict]:
+def load_hex_pairs(filepath: str, skipped: list = None) -> list[dict]:
     """Load from a simple two-column hex file (one pair per line, space-separated)."""
     records = []
+    if skipped is None:
+        skipped = []
     with open(filepath) as f:
         for lineno, line in enumerate(f, 1):
             line = line.strip()
@@ -60,7 +72,7 @@ def load_hex_pairs(filepath: str) -> list[dict]:
                 continue
             parts = line.split()
             if len(parts) < 2:
-                print(f"Warning: skipping line {lineno}: need two hex values", file=sys.stderr)
+                skipped.append((lineno, "need two hex values"))
                 continue
             records.append({"plaintext": parts[0], "hash": parts[1]})
     return records
@@ -370,29 +382,35 @@ def validate_records(records: list[dict], source: str = "input") -> list[dict]:
     return records
 
 
-def load_input(filepath: str, format: Optional[str] = None) -> list[dict]:
+def load_input(filepath: str, format: Optional[str] = None,
+               skip_malformed: bool = False, report: Optional[dict] = None) -> list[dict]:
     """Load input data from file, auto-detecting format if needed.
 
-    Raises InputFormatError (a ValueError) if the file cannot be parsed or
-    its digests are inconsistent -- see validate_records.
+    Raises InputFormatError (a ValueError) if the file cannot be parsed, if
+    any line is unusable (unless skip_malformed is True), or if its digests
+    are inconsistent -- see validate_records. When `report` is a dict it
+    receives {"records": n, "skipped": n, "skipped_lines": [(lineno, why)]}
+    so the caller can show what was left out.
     """
     if format is None:
         format = detect_input_format(filepath)
 
+    skipped = []
     if format == "jsonl":
-        records = load_jsonl(filepath)
+        records = load_jsonl(filepath, skipped)
     elif format == "hex_pairs":
-        records = load_hex_pairs(filepath)
+        records = load_hex_pairs(filepath, skipped)
     else:
         # Try JSONL first, fall back to hex pairs
         records = []
         try:
-            records = load_jsonl(filepath)
+            records = load_jsonl(filepath, skipped)
         except Exception:
             pass
         if not records:
+            skipped = []
             try:
-                records = load_hex_pairs(filepath)
+                records = load_hex_pairs(filepath, skipped)
             except Exception:
                 pass
         if not records:
@@ -401,4 +419,15 @@ def load_input(filepath: str, format: Optional[str] = None) -> list[dict]:
                 f"or space-separated hex pairs."
             )
 
-    return validate_records(records, source=os.path.basename(filepath))
+    source = os.path.basename(filepath)
+    if skipped and not skip_malformed:
+        shown = "; ".join(f"line {ln}: {why}" for ln, why in skipped[:3])
+        more = f" (+{len(skipped) - 3} more)" if len(skipped) > 3 else ""
+        raise InputFormatError(
+            f"{source}: {len(skipped)} unusable line(s) — {shown}{more}. "
+            f"Fix the file, or pass --skip-malformed to run on the {len(records)} usable records."
+        )
+    if report is not None:
+        report.update({"records": len(records), "skipped": len(skipped), "skipped_lines": skipped})
+
+    return validate_records(records, source=source)

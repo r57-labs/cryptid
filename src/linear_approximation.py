@@ -72,8 +72,8 @@ def linear_approximation_analysis(
     n_samples: int = 10000,
     input_bytes: int = 10,
     max_input_bits: int = 80,
-    max_output_bits: int = 256,
-    max_multi_output_bits: int = 256,
+    max_output_bits: int = None,
+    max_multi_output_bits: int = None,
     n_level4: int = 100000,
     rng: random.Random = None,
     verbose: bool = True,
@@ -81,12 +81,14 @@ def linear_approximation_analysis(
     """
     Compute linear approximation biases for low-weight masks.
 
-    Coverage: every generated input bit (input_bytes*8, default 80) and the
-    first max_output_bits digest bits for single-output-bit masks; multi-bit
-    output masks use the first max_multi_output_bits digest bits. Levels
-    1, 2, 3 and 5 are exhaustive over that range; level 4 (2x2) is sampled.
-    Mask parities are evaluated as big-int bitset operations, which is what
-    makes the exhaustive 3-bit level (C(80,3) x 256 = 21M tests) affordable.
+    Coverage: every generated input bit (input_bytes*8, default 80) and every
+    digest bit, whatever the digest width (max_output_bits /
+    max_multi_output_bits cap the single- and multi-bit output masks only when
+    given; v0.2 capped both at 256 by default, which left half of a 512-bit
+    digest untested). Levels 1, 2, 3 and 5 are exhaustive over that range;
+    level 4 (2x2) is sampled. Mask parities are evaluated as big-int bitset
+    operations, which is what makes the exhaustive 3-bit level
+    (C(80,3) x 256 = 21M tests for a 256-bit digest, 42M for 512) affordable.
 
     Tests:
       Level 1: All 1-bit input × 1-bit output pairs (bit_correlation equivalent, full width)
@@ -117,7 +119,7 @@ def linear_approximation_analysis(
 
         out_bits = hex_to_bits(h)
         if n_output_bits is None:
-            n_output_bits = min(len(out_bits), max_output_bits)
+            n_output_bits = len(out_bits) if max_output_bits is None else min(len(out_bits), max_output_bits)
 
         inputs_bits.append(inp_bits[:n_input_bits])
         outputs_bits.append(out_bits[:n_output_bits])
@@ -205,7 +207,8 @@ def linear_approximation_analysis(
         print(f" {level1_sig} significant")
 
     # Output bits for multi-bit masks (pairs / triples get expensive quickly)
-    out_bits_multi = list(range(min(n_output_bits, max_multi_output_bits)))
+    out_bits_multi = list(range(n_output_bits if max_multi_output_bits is None
+                                else min(n_output_bits, max_multi_output_bits)))
 
     # Level 2: all 2-bit input masks × every output bit
     input_pairs = list(combinations(range(n_input_bits), 2))

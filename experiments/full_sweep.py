@@ -12,6 +12,11 @@ tiers (see input_handler.generate_plaintexts and generate_dataset.as_bytes).
 Usage:
   python experiments/full_sweep.py --samples 10000 --output results/sweep_10k.json
   python experiments/full_sweep.py --samples 10000 --algorithms sha256,jenkins,crc32
+  python experiments/full_sweep.py --samples 10000 --algorithms sha512,sha3_512 --merge-into results/sweep_10k.json
+
+--merge-into re-runs a subset and replaces just those rows (and their oracle
+controls) in an existing sweep file, recording which rows were re-run and
+when; the v0.3 linear-tier widening was applied to the 512-bit rows this way.
 """
 
 import argparse
@@ -58,6 +63,8 @@ def main():
     ap.add_argument("--algorithms", default=None, help="comma-separated subset (default: all + oracles)")
     ap.add_argument("--no-oracles", action="store_true")
     ap.add_argument("--output", default=None)
+    ap.add_argument("--merge-into", default=None,
+                    help="existing sweep JSON whose rows for the selected algorithms are replaced")
     args = ap.parse_args()
 
     if args.algorithms:
@@ -120,6 +127,22 @@ def main():
         with open(args.output, "w") as f:
             json.dump({"args": vars(args), "results": results}, f, indent=2, default=str)
         print(f"\nResults saved to {args.output}")
+
+    if args.merge_into:
+        with open(args.merge_into) as f:
+            existing = json.load(f)
+        if existing["args"].get("samples") != args.samples or existing["args"].get("level") != args.level:
+            sys.exit(f"refusing to merge: {args.merge_into} was run at samples={existing['args'].get('samples')} "
+                     f"level={existing['args'].get('level')}, this run is samples={args.samples} level={args.level}")
+        for name, d in results.items():
+            existing["results"][name] = d
+        existing.setdefault("reruns", []).append({
+            "date": time.strftime("%Y-%m-%d"), "algorithms": list(results.keys()),
+            "reason": "see docs/REVIEW-2.md",
+        })
+        with open(args.merge_into, "w") as f:
+            json.dump(existing, f, indent=2, default=str)
+        print(f"Replaced {len(results)} row(s) in {args.merge_into}")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,12 @@
 # cryptid
 
+[![CI](https://github.com/r57-labs/cryptid/actions/workflows/ci.yml/badge.svg)](https://github.com/r57-labs/cryptid/actions/workflows/ci.yml)
+
 Black-box hash function assessment toolkit. Empirically tests whether a hash function behaves like a random oracle — statistically (does the output look random?) and differentially (does the output *change* randomly?) — and checks implementations of standard algorithms against a trusted reference.
 
 Accompanies the whitepaper: *Empirical Detection of Statistical and Differential Weaknesses in Hash Functions* (`whitepaper.pdf`, source in `whitepaper.py`).
 
-> **v0.2 (October 2026).** This release follows an adversarial review of the v0.1 code, whitepaper and site by a second model family. The review found the code correct but several claims overstated or wrong. Everything it found, and what changed, is in [`docs/REVIEW.md`](docs/REVIEW.md). The short version: the toolkit does what it does well; v0.1 described it as doing more.
+> **v0.3 (November 2026).** This project is built with AI models and reviewed adversarially by other AI models before anything is claimed. v0.1 was built with Claude Opus. v0.2 followed a review by Claude Fable 5.1 — a more capable model from the same vendor — which found the code correct and several claims overstated ([`docs/REVIEW.md`](docs/REVIEW.md)). v0.3 follows a review by a model from a different vendor, OpenAI's Luna6 (Codex), which found four fail-open bugs in the code the first review had *added*, a coverage gap, and more overstated claims ([`docs/REVIEW-2.md`](docs/REVIEW-2.md), with the full transcript). The short version: the detection machinery has held up under both reviews; the claims and the new code around it had not been checked the way the original code was.
 
 ## What it is — and is not
 
@@ -15,7 +17,7 @@ cryptid answers two different questions, with two different mechanisms:
 | Does this function have a statistical or differential weakness? (biased output, input features leaking into the output, poor avalanche, deterministic differentials, linear biases, short cycles) | Statistical battery, four tiers | `cryptid test` |
 | Is this implementation of SHA-256 (or any standard algorithm) *faithful* to the standard? | Known-answer comparison against a reference | `cryptid kat`, `cryptid compare` |
 
-The battery cannot answer the second question. A SHA-256 with a typo in one round constant, or with 24 of its 64 rounds, is still a well-mixed function: its output is uniform, it avalanches perfectly, and it passes every statistical test here (see `experiments/out_of_family_eval.py --implementation-variants`). The only way to detect it is to compare its outputs with a correct implementation, which is what `kat` does.
+The battery cannot answer the second question. A SHA-256 with a typo in one round constant, or one that runs only 24 of its 64 compression rounds, is still a well-mixed function: its output is uniform, it avalanches perfectly, and it passes every tier of the battery (full level; see "What the battery cannot see" below). The only way to detect it is to compare its outputs with a correct implementation, which is what `kat` does.
 
 ## Quick start
 
@@ -35,6 +37,7 @@ python cryptid.py test --command "openssl dgst -sha256 -hex" -n 2000 --level sta
 # Is that implementation actually SHA-256? Known-answer test against the reference
 python cryptid.py kat -a sha256 --command "openssl dgst -sha256 -hex"
 python cryptid.py kat -a sha256 -i device_output.jsonl
+python cryptid.py kat -a sha256 --self-check      # only the built-in reference vs its published vectors
 
 # Diff two implementations' outputs on the same inputs
 python cryptid.py compare --target device_output.jsonl --reference reference.jsonl
@@ -48,7 +51,7 @@ python cryptid.py generate -a sha256 -n 100000 -o vectors.jsonl
 Fourteen tests in four tiers. Each tier needs a different kind of access.
 
 **Tier 1 — Statistical suite** (6 tests + classifier; needs only input/output records)
-Bit correlation (every input bit × every output bit), output entropy (per bit and per byte), inter-record distance, conditional byte frequency, mutual information (permutation-tested), multi-byte interaction (parities and XOR/sum features of input bytes, pairs and triples × every output bit). A logistic-regression meta-learner combines 20 normalized features from these tests into one probability, P(weakened).
+Bit correlation (every input bit × every output bit), output entropy (per bit and per byte), inter-record distance, conditional byte frequency, mutual information (permutation-tested), multi-byte interaction (byte parities, XOR features of byte pairs and triples, and sum-parity features of byte pairs, each × every output bit). A logistic-regression meta-learner combines 20 normalized features from these tests into one probability, P(weakened).
 
 The inter-record distance test was called "avalanche" in v0.1. It is not an avalanche test — it measures the Hamming distance between digests of consecutive, unrelated records — and it has been renamed. The empirical avalanche (Strict Avalanche Criterion) test is the single-bit differential in tier 2.
 
@@ -59,7 +62,7 @@ Single-bit differential matrix (P(output bit j flips | input bit i flips) for ev
 Near-collision frequency, output sequence correlation on counter-mode inputs, and cycle / fixed-point detection by Floyd's algorithm.
 
 **Tier 4 — Linear approximation** (1 test, 6 mask levels; needs a callable function)
-Bias of parity(input mask) = parity(output mask) for every 1-, 2- and 3-bit input mask against every output bit, every input bit against every 2-bit output mask, sampled 2×2 masks, and byte-parity masks — about 25 million approximations for a 256-bit digest, evaluated as bitset operations.
+Bias of parity(input mask) = parity(output mask) for every 1-, 2- and 3-bit input mask against every output bit, every input bit against every 2-bit output mask, sampled 2×2 masks, and byte-parity masks — about 25 million approximations for a 256-bit digest and 54 million for 512, evaluated as bitset operations. A signal is any of: maximum bias above 10/√N, the count of p<0.001 approximations above five times its chance expectation (and at least 10), or the count of multi-bit ones above three times its expectation (and at least 10). (v0.2 capped the output masks at 256 bits, so SHA-512 and SHA-3-512 had half their digest untested in this tier; fixed in v0.3 and the three 512-bit rows re-run.)
 
 In tiers 2–4 the function is fed raw random bytes, so a single-bit flip in the generated input is a single-bit flip in the hashed message. (v0.1 hex-encoded the bytes first, so 44% of its "single-bit" flips changed 2–5 bits of the actual message.)
 
@@ -88,9 +91,9 @@ Timings scale with sample count and output width. Measured on a 2-vCPU Linux con
 | 0 | PASS | Every requested test ran; none found anything |
 | 1 | WARN | One test battery reported an anomaly |
 | 2 | FAIL | Two or more batteries, or a strong single signal (`compare`/`kat`: outputs disagree) |
-| 3 | ERROR | A test could not run (bad input file, missing model, implementation error) — never reported as PASS |
+| 3 | ERROR | A test could not run (bad input file, missing model, implementation error), or nothing was tested (`kat`: the implementation failed on a message; `compare`: no shared inputs) — never reported as PASS |
 
-The meta-learner's threshold is 0.40. When P(weakened) is near or over it, the report names the features that drove the score, so a WARN is explainable even when every individual test row reads "clean".
+The meta-learner's threshold is 0.40. When P(weakened) is near or over it, the report names the features that drove the score, so a WARN is explainable even when every individual test row reads "clean". Below 2,000 samples the classifier is skipped and the six tier-1 tests decide on their own: a row marked SIGNAL makes the verdict WARN, a "marginal" row (the test's own flag below the SIGNAL threshold) is listed in the notes, and the verdict line says the tier is unclassified. Expect a spurious WARN on about 1 in 100 clean runs at N = 200 (the mutual-information permutation test's nominal 1%); none were seen in 100 runs at N = 500. (v0.2 ignored tier 1 entirely when the classifier was skipped and could print PASS above a SIGNAL row.)
 
 ## Input modes
 
@@ -104,7 +107,7 @@ The meta-learner's threshold is 0.40. When P(weakened) is near or over it, the r
 {"plaintext": "hello world", "hash": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"}
 ```
 
-Only tier 1 can run from a file, because the other tiers must choose their own inputs. The plaintext is a string; the message the hash function saw is its UTF-8 encoding. Every digest must be zero-padded to the hash's full width — a file mixing digest lengths is rejected with an explanation (v0.1 ran it anyway and produced a spurious WARN).
+Only tier 1 can run from a file, because the other tiers must choose their own inputs. The plaintext is a string; the message the hash function saw is its UTF-8 encoding. Every digest must be zero-padded to the hash's full width — a file mixing digest lengths is rejected with an explanation (v0.1 ran it anyway and produced a spurious WARN). A file with lines that cannot be used (malformed JSON, no digest field) is also rejected (exit 3); `--skip-malformed` runs on the usable records and prints and records how many were left out (v0.2 skipped them with a warning and said nothing in the verdict).
 
 ## Writing a wrapper for an external implementation
 
@@ -134,7 +137,7 @@ python cryptid.py kat -a sha256 -i device_output.jsonl              # faithful t
 python cryptid.py test -i device_output.jsonl --level quick         # statistically sound?
 ```
 
-For an HSM, the body of `your_hash_function` is a PKCS#11 digest call; for a serial device, write the bytes out and read the digest back. If your implementation can also be invoked as a command, `--command` gives you the differential tiers as well.
+For an HSM, the body of `your_hash_function` is a PKCS#11 digest call (take the PIN from the environment or a prompt, never a literal in the script); for a serial device, write the bytes out and read the digest back. If your implementation can also be invoked as a command, `--command` gives you the differential tiers as well.
 
 Worked example with MurmurHash3 (`pip install mmh3`):
 
@@ -168,7 +171,7 @@ Expected: `Verdict: PASS` at `--level quick` — MurmurHash3's output statistics
 
 **Non-cryptographic:** CRC32, Adler-32, FNV-1a (32/64), MurmurHash3 (x86_32), SipHash-2-4 (fixed key), DJB2, Jenkins one-at-a-time, Pearson-64 (8 chained 8-bit Pearson hashes with a seeded random table; v0.1 used an affine table)
 
-Every hand-rolled implementation is checked against published test vectors by `cryptid kat -a <name>`.
+The hand-rolled implementations that have published test vectors — SipHash-2-4, MurmurHash3, FNV-1a, Jenkins OAT, DJB2, CRC32, Adler-32 — are checked against them by `cryptid kat -a <name> --self-check` (also on every CI run). Pearson-64 is this project's own construction and has no published vectors.
 
 ## Results
 
@@ -226,7 +229,7 @@ The classifier is trained on 288 synthetic variants of the four calibration fami
 
 ### Out-of-family weaknesses
 
-`python experiments/out_of_family_eval.py --samples 5000 --implementation-variants` → `results/out_of_family.json`
+`python experiments/out_of_family_eval.py --samples 5000 --implementation-variants --impl-level full` → `results/out_of_family.json`
 
 Five weaknesses written after the detectors were frozen, chosen to be things they were *not* built to look for:
 
@@ -243,14 +246,14 @@ Five weaknesses written after the detectors were frozen, chosen to be things the
 
 ### What the battery cannot see: unfaithful implementations
 
-| Implementation | P(weakened) | Differential | Verdict |
-|---|---|---|---|
-| sha256 correct (pure py) | 0.15 | — | PASS |
-| sha256 K[20] 1-bit typo | 0.15 | — | PASS |
-| sha256 24 of 64 rounds | 0.15 | — | PASS |
-| sha256 12 of 64 rounds | 0.18 | — | PASS |
+| Implementation | P(weakened) | Differential | Extended | Linear | Verdict |
+|---|---|---|---|---|---|
+| sha256 correct (pure py) | 0.15 | — | — | — | PASS |
+| sha256 K[20] 1-bit typo | 0.15 | — | — | — | PASS |
+| sha256 24 of 64 rounds | 0.15 | — | — | — | PASS |
+| sha256 12 of 64 rounds | 0.18 | — | — | — | PASS |
 
-(standard level, N = 2,000; pure-Python SHA-256 variants.) All pass. 24-step SHA-256 is below the best published practical collision attack (31 steps). `cryptid kat -a sha256 --command …` fails all three immediately.
+(full level, N = 2,000; pure-Python SHA-256 variants.) All pass every tier. For scale: the best published collision attacks on SHA-256 reach 31 steps at practical cost (Li, Liu and Wang, Eurocrypt 2024), 36 steps with a published colliding message pair at 2^57 (Li et al., [IACR ePrint 2026/1120](https://eprint.iacr.org/2026/1120), June 2026), and 38 steps at a theoretical 2^104 — so a 24-round SHA-256 is well inside the practically broken range and the battery cannot tell. `cryptid kat -a sha256 --command …` fails all three immediately.
 
 ### Internal diffusion (white-box), aligned on word injection
 
@@ -265,7 +268,7 @@ Five weaknesses written after the detectors were frozen, chosen to be things the
 | md5 | 18 | 5 / 8 | 19% / 52% |
 | sha1 | 20 | 7 / 11 | 9% / 26% |
 
-"Absolute" counts from the start of the compression function and depends on when the flipped message word is absorbed (one word per round in Merkle–Damgård; the whole block at once in the sponge) — the comparison v0.1 made. "After injection" counts from the round the flipped word enters the state and is the only column that compares mixing speed. SHA-3 reaches full diffusion 3 rounds after absorption; SHA-256 reaches 90% 5 rounds after injection, MD5 8, SHA-1 11. SM3's apparent lead over SHA-256 in absolute terms is its message expansion injecting each word four rounds early; aligned, it mixes slightly slower than SHA-256. Diffusion rate describes a design; it does not rank security.
+"Absolute" counts from the start of the compression function and depends on when the flipped message word is absorbed (one word per round in Merkle–Damgård; the whole block at once in the sponge) — the comparison v0.1 made. "After injection" counts from the round the flipped word enters the state and is the only column that compares mixing speed. SHA-3 is at 99.9% of the ideal distance 3 rounds after absorption; SHA-256 reaches 90% 5 rounds after injection, MD5 8, SHA-1 11. SM3's apparent lead over SHA-256 in absolute terms is its message expansion injecting each word four rounds early; aligned, it mixes slightly slower than SHA-256. Diffusion rate describes a design; it does not rank security.
 
 Figures: `python experiments/make_figures.py` → `figures/`.
 
@@ -281,7 +284,7 @@ cryptid detects *statistical and differential* departures from random-oracle beh
 
 Sensitivity is bounded by the sample count: a bias too small to reach the chi-squared thresholds at the chosen `-n` is invisible. Running at larger `-n` is the remedy, and the thresholds are deliberately conservative to keep the false-positive rate at zero on real primitives.
 
-Related tools: [SMHasher](https://github.com/rurban/smhasher) is the standard quality suite for non-cryptographic hashes and includes avalanche, BIC and differential tests; it requires compiling the function in as C/C++. cryptid trades its depth for black-box access — anything that returns a digest can be tested — and adds the record-based statistical screening and known-answer workflow for implementations. NIST SP 800-22 and similar batteries test the randomness of a bit stream, not the input→output relationship.
+Related tools: [SMHasher](https://github.com/rurban/smhasher) is the standard quality suite for non-cryptographic hashes and includes avalanche, BIC and differential tests; it requires compiling the function in as C/C++. cryptid trades its depth for black-box access — any function whose outputs you can collect gets the statistical tier, and any function you can call gets all four — and adds the record-based statistical screening and known-answer workflow for implementations. NIST SP 800-22 and similar batteries test the randomness of a bit stream, not the input→output relationship.
 
 ## Project structure
 
@@ -291,6 +294,9 @@ cryptid/                 CLI
   engine.py                tier orchestration and verdicts
   input_handler.py         JSONL / hex-pair loading and validation, command mode, input generation
   report.py                terminal and JSON output
+
+tests/                   regression tests for the verdict and exit-code contract (python -m unittest discover -s tests)
+.github/workflows/ci.yml runs them, the built-ins' published-vector self-checks, and the positive controls on every push
 
 src/                     analysis modules
   statistical_analysis.py  tier 1 (6 tests)
@@ -309,17 +315,19 @@ models/
 experiments/
   full_sweep.py            detection matrix over all built-ins + oracle controls
   out_of_family_eval.py    generalization test on weaknesses the detectors were not designed for
-  run_full_sweep.py, targeted_probe.py, bit_probe.py, byte_model.py, hybrid_model.py, evaluate.py
-                           research scripts from the project's earlier phases (some need PyTorch)
+  timing.py, make_figures.py
+  legacy/                  neural-probe research scripts from the project's earlier phases; nothing
+                           quoted anywhere comes from them, and their README lists their known flaws
 
 results/                 JSON output of the experiments quoted in the whitepaper
-docs/REVIEW.md           the v0.1 review and the v0.2 change list
+docs/REVIEW.md           the v0.1 review (Claude Fable 5.1) and the v0.2 change list
+docs/REVIEW-2.md         the v0.2 review (OpenAI Luna6) and the v0.3 change list; docs/REVIEW-2-transcript.md is the conversation
 whitepaper.py            builds whitepaper.pdf (ReportLab)
 ```
 
 ## Requirements
 
-Python 3.10+, standard library only for everything except the four block-cipher constructions (`pip install cryptography`). SM3 needs a Python built against OpenSSL 3.0+ (`hashlib.new("sm3")`). PyTorch is only needed for the neural-probe research scripts in `experiments/`.
+Python 3.10+ (tested on 3.10 and 3.13). The toolkit itself — `cryptid.py`, `src/`, the tests — is standard library only. Optional: `pip install cryptography` for the four block-cipher constructions; a Python built against OpenSSL 3.0+ for SM3 (`hashlib.new("sm3")`); `matplotlib` for `experiments/make_figures.py`; `reportlab` for `whitepaper.py`; PyTorch for the legacy neural-probe scripts in `experiments/legacy/`.
 
 ## License
 

@@ -122,18 +122,21 @@ def cmd_test(args):
         print(f"  Note: {args.samples} samples — meta-learner requires 2000+ and will be skipped.")
 
     # Determine input source
+    load_report = {}
     if args.input:
         # Load from file
         if verbose:
             print(f"\n  Loading: {args.input}")
         try:
-            records = load_input(args.input)
+            records = load_input(args.input, skip_malformed=args.skip_malformed, report=load_report)
         except (InputFormatError, OSError) as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(3)
         name = os.path.splitext(os.path.basename(args.input))[0]
         if verbose:
             print(f"  Loaded {len(records):,} records ({detect_output_width(records)}-bit output)")
+            if load_report.get("skipped"):
+                print(f"  Skipped {load_report['skipped']:,} unusable line(s) (--skip-malformed)")
 
     elif args.algorithm:
         # Use built-in algorithm
@@ -175,6 +178,9 @@ def cmd_test(args):
         model_path=model_path,
         verbose=verbose,
     )
+    if load_report.get("skipped"):
+        result.notes.append(f"{load_report['skipped']:,} unusable input line(s) were skipped at your request; "
+                            f"the verdict covers the {load_report['records']:,} records that loaded")
 
     # Output
     if json_output:
@@ -250,6 +256,12 @@ def cmd_compare(args):
 
     # Direct output comparison on shared inputs (the faithfulness check)
     divergence = _check_output_divergence(records_a, records_b)
+    if divergence["shared_inputs"] == 0:
+        divergence["verdict"] = "INCONCLUSIVE"
+    elif divergence["mismatches"] > 0:
+        divergence["verdict"] = "FAIL"
+    else:
+        divergence["verdict"] = "PASS"
 
     # Output
     if json_output:
@@ -257,15 +269,20 @@ def cmd_compare(args):
             "target": result_a.to_dict(),
             "reference": result_b.to_dict(),
             "output_comparison": divergence,
+            "verdict": divergence["verdict"],
         }
         print(json.dumps(comparison, indent=2, default=str))
     else:
         print_comparison_report(result_a, result_b)
         _print_output_divergence(divergence, verbose)
 
-    # Exit code: mismatching outputs on shared inputs is a failure
-    if divergence["mismatches"] > 0:
+    # Exit code: mismatching outputs on shared inputs is a failure (2); no
+    # shared inputs means nothing was compared, which is an error (3), not a
+    # pass. v0.2 exited 0 in that case (found in the v0.3 review).
+    if divergence["verdict"] == "FAIL":
         sys.exit(2)
+    if divergence["verdict"] == "INCONCLUSIVE":
+        sys.exit(3)
 
 
 def _check_output_divergence(records_a: list, records_b: list) -> dict:
@@ -297,8 +314,8 @@ def _check_output_divergence(records_a: list, records_b: list) -> dict:
 def _print_output_divergence(div: dict, verbose: bool):
     checked, mismatches = div["shared_inputs"], div["mismatches"]
     if checked == 0:
-        print("  Note: no overlapping inputs found between target and reference.")
-        print("  For direct comparison, ensure both files hash the same inputs.")
+        print(f"  {Colors.red('INCONCLUSIVE')} — the two files share no inputs, so no outputs were compared.")
+        print("  Hash the same inputs with both implementations (cryptid generate, then run each on the plaintexts).")
     elif mismatches > 0:
         print(f"\n  {Colors.red('!')} Output mismatch: {mismatches:,}/{checked:,} ({div['mismatch_pct']:.1f}%) of shared inputs differ")
         print(f"  This indicates the implementations are NOT equivalent.")
@@ -346,13 +363,25 @@ def cmd_kat(args):
         Colors.disable()
 
     algorithm = args.algorithm
-    reference = _get_builtin_hash_fn(algorithm)
-    results = {"algorithm": algorithm, "mode": None, "checked": 0, "mismatches": [], "errors": []}
+    if not (args.command or args.input or args.self_check):
+        print("Error: kat needs an implementation to test: --command or -i/--input "
+              "(or --self-check to test only the built-in reference against its published vectors).",
+              file=sys.stderr)
+        sys.exit(1)
 
-    def check(label, message, expected, actual):
-        results["checked"] += 1
+    reference = _get_builtin_hash_fn(algorithm)
+    # The reference's own published-vector check and the external checks are
+    # counted separately. v0.2 pooled them, so a command that failed on every
+    # message still had one passing check (the reference's) and was reported
+    # PASS (found in the v0.3 review).
+    results = {"algorithm": algorithm, "mode": None,
+               "reference_checks": 0, "reference_mismatches": [],
+               "checked": 0, "mismatches": [], "errors": [], "verdict": None}
+
+    def check(label, message, expected, actual, bucket="checked", bad="mismatches"):
+        results[bucket] += 1
         if actual != expected:
-            results["mismatches"].append({"message": label, "expected": expected, "actual": actual})
+            results[bad].append({"message": label, "expected": expected, "actual": actual})
             if verbose:
                 pos = next((i for i, (a, b) in enumerate(zip(expected, actual)) if a != b),
                            min(len(expected), len(actual)))
@@ -362,10 +391,9 @@ def cmd_kat(args):
             print(f"  {Colors.green('✓')} {label}")
 
     # 1. Self-check the built-in reference against published vectors
-    results["mode"] = "self-check"
     for msg, expected in KNOWN_ANSWERS.get(algorithm, []):
         label = f"published vector {msg!r}" if isinstance(msg, str) else f"published vector ({len(msg)} bytes)"
-        check(label, msg, expected, reference(msg))
+        check(label, msg, expected, reference(msg), "reference_checks", "reference_mismatches")
     if algorithm not in KNOWN_ANSWERS and verbose:
         print(f"  (no published vectors embedded for {algorithm}; the reference is the library implementation)")
 
@@ -399,21 +427,51 @@ def cmd_kat(args):
             check(f"record {i + 1} ({rec['plaintext'][:24]!r})", rec["plaintext"],
                   reference(rec["plaintext"]), rec["hash"])
 
+    else:
+        results["mode"] = "self-check"
+
+    # 3. Verdict. ERROR beats everything: a reference that fails its own
+    # vectors cannot judge anything, and an implementation that could not be
+    # run on some message has not been verified on it.
     n_bad = len(results["mismatches"])
-    results["verdict"] = "ERROR" if results["errors"] and results["checked"] == 0 else ("FAIL" if n_bad else "PASS")
+    if results["reference_mismatches"]:
+        results["verdict"] = "ERROR"
+        results["reason"] = f"built-in {algorithm} reference failed its own published vectors"
+    elif results["mode"] == "self-check":
+        if results["reference_checks"] == 0:
+            results["verdict"] = "ERROR"
+            results["reason"] = f"no published vectors embedded for {algorithm}; nothing to self-check"
+        else:
+            results["verdict"] = "PASS"
+            results["reason"] = "built-in reference only; no external implementation was tested"
+    elif results["errors"]:
+        results["verdict"] = "ERROR"
+        results["reason"] = (f"{len(results['errors'])} of {len(results['errors']) + results['checked']} "
+                             f"messages could not be hashed by the implementation under test")
+    elif results["checked"] == 0:
+        results["verdict"] = "ERROR"
+        results["reason"] = "no messages were checked"
+    elif n_bad:
+        results["verdict"] = "FAIL"
+        results["reason"] = f"{n_bad} of {results['checked']} checks disagree with the reference"
+    else:
+        results["verdict"] = "PASS"
+        results["reason"] = f"{results['checked']} known-answer checks matched the reference"
 
     if args.json:
         print(json.dumps(results, indent=2, default=str))
     else:
         print()
-        if results["verdict"] == "PASS":
-            print(f"  {Colors.green('PASS')} — {results['checked']:,} known-answer checks matched the {algorithm} reference.")
-        elif results["verdict"] == "FAIL":
-            print(f"  {Colors.red('FAIL')} — {n_bad:,}/{results['checked']:,} checks disagree with the {algorithm} reference.")
-        else:
-            print(f"  {Colors.red('ERROR')} — implementation could not be run.")
-        if results["errors"]:
-            print(f"  {len(results['errors'])} message(s) could not be hashed by the implementation under test.")
+        colour = {"PASS": Colors.green, "FAIL": Colors.red, "ERROR": Colors.red}[results["verdict"]]
+        ref_note = ""
+        if results["reference_checks"] and results["mode"] != "self-check":
+            n_ref = results["reference_checks"]
+            ref_note = f" ({algorithm} reference self-check: {n_ref} published vector{'s' if n_ref != 1 else ''} ok)"
+        print(f"  {colour(results['verdict'])} — {results['reason']}{ref_note}.")
+        if results["errors"] and verbose:
+            print(f"  First error: {results['errors'][0]['message']}: {results['errors'][0]['error']}")
+        if n_bad and results["verdict"] == "ERROR":
+            print(f"  {n_bad} mismatch(es) were also found on the messages that did run.")
         print()
 
     sys.exit({"PASS": 0, "FAIL": 2, "ERROR": 3}[results["verdict"]])
@@ -501,6 +559,9 @@ examples:
     p_test.add_argument("--level", choices=["quick", "standard", "full"], default="standard",
                         help="Test depth: quick (stats only), standard (+differential), full (+extended+linear)")
     p_test.add_argument("--model", help="Path to meta-learner model file")
+    p_test.add_argument("--skip-malformed", action="store_true",
+                        help="Run on the usable records of a file that has unusable lines "
+                             "(default: such a file is an error, exit 3)")
     p_test.add_argument("--json", action="store_true", help="Output results as JSON")
     p_test.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
     p_test.set_defaults(func=cmd_test)
@@ -544,6 +605,8 @@ examples:
     kat_src = p_kat.add_mutually_exclusive_group()
     kat_src.add_argument("--command", help="Shell command: raw message bytes on stdin, hex digest on stdout")
     kat_src.add_argument("-i", "--input", help="JSONL file of plaintext/hash pairs produced by the implementation")
+    kat_src.add_argument("--self-check", action="store_true",
+                         help="Only check the built-in reference against its embedded published vectors")
     p_kat.add_argument("--json", action="store_true", help="Output results as JSON")
     p_kat.add_argument("-v", "--verbose", action="store_true", help="Print every check, not just failures")
     p_kat.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")

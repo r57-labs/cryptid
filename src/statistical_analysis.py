@@ -264,14 +264,28 @@ def entropy_analysis(records: list[dict]) -> dict:
     mean_byte_entropy = sum(byte_entropies) / len(byte_entropies)
     min_byte_entropy = min(byte_entropies)
 
-    signal = min_bit_entropy < 0.95 or min_byte_entropy < 7.5
+    # Thresholds. The fixed values (bit 0.95, byte 7.5) are what the
+    # meta-learner was calibrated with and apply unchanged from roughly
+    # N = 1,000 up. Below that the plug-in entropy estimate is biased low
+    # (a 256-symbol byte cannot even reach 8 bits from 200 samples:
+    # log2(200) = 7.64), so a fixed threshold flagged every correct function
+    # at small N. The N-aware forms below only ever relax the fixed ones:
+    # the byte threshold follows the Miller-Madow bias 255/(2N ln 2) less a
+    # margin for the minimum over all output bytes; the bit threshold is the
+    # entropy of a bit whose frequency sits 5 sigma from 1/2.
+    delta = 5.0 * 0.5 / math.sqrt(n)
+    bit_threshold = min(0.95, 1.0 - (2.0 / math.log(2)) * delta * delta - 0.01)
+    expected_byte_entropy = 8.0 - 255.0 / (2.0 * n * math.log(2))
+    byte_threshold = min(7.5, expected_byte_entropy - max(0.25, 8.0 / math.sqrt(n)))
+
+    signal = min_bit_entropy < bit_threshold or min_byte_entropy < byte_threshold
 
     # Signal strength: how far below ideal is the worst bit?
-    # 0.0 at threshold (0.95), 1.0 at severe (0.5 or below)
-    if min_bit_entropy < 0.95:
-        signal_strength = min(1.0, (0.95 - min_bit_entropy) / 0.45)
-    elif min_byte_entropy < 7.5:
-        signal_strength = min(1.0, (7.5 - min_byte_entropy) / 3.5)
+    # 0.0 at threshold, 1.0 at severe (0.5 or below)
+    if min_bit_entropy < bit_threshold:
+        signal_strength = min(1.0, (bit_threshold - min_bit_entropy) / 0.45)
+    elif min_byte_entropy < byte_threshold:
+        signal_strength = min(1.0, (byte_threshold - min_byte_entropy) / 3.5)
     else:
         signal_strength = 0.0
 
@@ -290,6 +304,8 @@ def entropy_analysis(records: list[dict]) -> dict:
         "byte_entropy_deficit": 8.0 - mean_byte_entropy,
         "lowest_entropy_bit": bit_entropies.index(min_bit_entropy),
         "lowest_entropy_byte": byte_entropies.index(min_byte_entropy),
+        "bit_threshold": round(bit_threshold, 4),
+        "byte_threshold": round(byte_threshold, 4),
         "signal": signal,
         "signal_strength": signal_strength,
     }

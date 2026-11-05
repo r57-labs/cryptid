@@ -5,7 +5,7 @@
     "seed": "out-of-family-2026",
     "implementation_variants": true,
     "impl_samples": 2000,
-    "impl_level": "standard",
+    "impl_level": "full",
     "output": "results/out_of_family.json",
     "verbose": false
   },
@@ -747,11 +747,11 @@
       "output_bits": 256,
       "n_samples": 2000,
       "meta_learner": {
-        "probability": 0.15163780278718964,
+        "probability": 0.15163780278719222,
         "predicted_label": 0,
         "label": "clean",
         "threshold": 0.4,
-        "confidence": 0.413936995354684,
+        "confidence": 0.4139369953546797,
         "verdict": "BORDERLINE \u2014 close to decision boundary",
         "top_features": [
           {
@@ -831,14 +831,38 @@
           "detected": false
         }
       },
-      "extended_summary": null,
-      "linear_summary": null,
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.0615,
+        "detected": false,
+        "n_significant": 24626,
+        "n_input_bits": 80,
+        "n_output_bits": 256,
+        "total_tests": 24575360
+      },
       "timings": {
-        "statistical": 1.0565719604492188,
-        "differential": 34.19070076942444
+        "statistical": 1.3871138095855713,
+        "differential": 68.23904967308044,
+        "extended": 1438.4071037769318,
+        "linear": 27.37754797935486
       },
       "errors": [],
-      "wall_seconds": 35.2
+      "notes": [],
+      "classifier_skipped": false,
+      "wall_seconds": 1535.4
     },
     {
       "name": "sha256 K[20] 1-bit typo",
@@ -847,11 +871,11 @@
       "output_bits": 256,
       "n_samples": 2000,
       "meta_learner": {
-        "probability": 0.15416504422867275,
+        "probability": 0.15416504422867525,
         "predicted_label": 0,
         "label": "clean",
         "threshold": 0.4,
-        "confidence": 0.40972492628554547,
+        "confidence": 0.4097249262855413,
         "verdict": "BORDERLINE \u2014 close to decision boundary",
         "top_features": [
           {
@@ -931,14 +955,38 @@
           "detected": false
         }
       },
-      "extended_summary": null,
-      "linear_summary": null,
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.066,
+        "detected": false,
+        "n_significant": 24979,
+        "n_input_bits": 80,
+        "n_output_bits": 256,
+        "total_tests": 24575360
+      },
       "timings": {
-        "statistical": 1.0958619117736816,
-        "differential": 34.85437321662903
+        "statistical": 1.3633360862731934,
+        "differential": 67.66261887550354,
+        "extended": 1435.1502203941345,
+        "linear": 27.010821104049683
       },
       "errors": [],
-      "wall_seconds": 36.0
+      "notes": [],
+      "classifier_skipped": false,
+      "wall_seconds": 1531.2
     },
     {
       "name": "sha256 24 of 64 rounds",
@@ -947,11 +995,11 @@
       "output_bits": 256,
       "n_samples": 2000,
       "meta_learner": {
-        "probability": 0.14867091882689293,
+        "probability": 0.1486709188268966,
         "predicted_label": 0,
         "label": "clean",
         "threshold": 0.4,
-        "confidence": 0.4188818019551785,
+        "confidence": 0.4188818019551724,
         "verdict": "BORDERLINE \u2014 close to decision boundary",
         "top_features": [
           {
@@ -1031,14 +1079,38 @@
           "detected": false
         }
       },
-      "extended_summary": null,
-      "linear_summary": null,
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.066,
+        "detected": false,
+        "n_significant": 24817,
+        "n_input_bits": 80,
+        "n_output_bits": 256,
+        "total_tests": 24575360
+      },
       "timings": {
-        "statistical": 1.161100149154663,
-        "differential": 21.138317346572876
+        "statistical": 2.12359356880188,
+        "differential": 36.64167141914368,
+        "extended": 868.8441865444183,
+        "linear": 27.034366369247437
       },
       "errors": [],
-      "wall_seconds": 22.3
+      "notes": [],
+      "classifier_skipped": false,
+      "wall_seconds": 934.6
     },
     {
       "name": "sha256 12 of 64 rounds",
@@ -1047,11 +1119,11 @@
       "output_bits": 256,
       "n_samples": 2000,
       "meta_learner": {
-        "probability": 0.17641251530878224,
+        "probability": 0.17641251530878424,
         "predicted_label": 0,
         "label": "clean",
         "threshold": 0.4,
-        "confidence": 0.37264580781869633,
+        "confidence": 0.372645807818693,
         "verdict": "BORDERLINE \u2014 close to decision boundary",
         "top_features": [
           {
@@ -1131,14 +1203,48 @@
           "detected": false
         }
       },
-      "extended_summary": null,
-      "linear_summary": null,
+      "extended_summary": {
+        "near_collision": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "sequence": {
+          "signal": 0.0,
+          "detected": false
+        },
+        "cycle": {
+          "signal": 0.0,
+          "detected": false
+        }
+      },
+      "linear_summary": {
+        "max_bias": 0.0605,
+        "detected": false,
+        "n_significant": 24584,
+        "n_input_bits": 80,
+        "n_output_bits": 256,
+        "total_tests": 24575360
+      },
       "timings": {
-        "statistical": 1.0601160526275635,
-        "differential": 16.884963989257812
+        "statistical": 1.6700186729431152,
+        "differential": 31.395444631576538,
+        "extended": 675.1538980007172,
+        "linear": 29.03230905532837
       },
       "errors": [],
-      "wall_seconds": 17.9
+      "notes": [],
+      "classifier_skipped": false,
+      "wall_seconds": 737.3
+    }
+  ],
+  "reruns": [
+    {
+      "date": "2026-11-05",
+      "section": "implementation_variants",
+      "level": "full",
+      "samples": 2000,
+      "reason": "see docs/REVIEW-2.md",
+      "note": "same audit() path as --impl-only --impl-level full, run as parallel single-variant processes"
     }
   ]
 }

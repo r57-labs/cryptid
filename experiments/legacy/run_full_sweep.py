@@ -11,15 +11,15 @@ Pipeline per dataset:
 
 Usage:
   # Full sweep with all defaults (100K samples, all algos, all distributions)
-  python experiments/run_full_sweep.py --output-dir data/sweep_round1/
+  python experiments/legacy/run_full_sweep.py --output-dir data/sweep_round1/
 
   # Quick test run (1K samples, specific targets)
-  python experiments/run_full_sweep.py --size 1000 \
+  python experiments/legacy/run_full_sweep.py --size 1000 \
     --targets sha256,sm3 --distributions random \
     --output-dir data/sweep_test/
 
   # Skip targeted probe (no PyTorch needed)
-  python experiments/run_full_sweep.py --skip-probe --output-dir data/sweep_round1/
+  python experiments/legacy/run_full_sweep.py --skip-probe --output-dir data/sweep_round1/
 """
 
 import argparse
@@ -31,7 +31,7 @@ from pathlib import Path
 
 # The analysis modules live in ../src; make them importable when this
 # script is run from anywhere.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
 from generate_dataset import HASH_FUNCTIONS, RANDOM_ORACLES, ORACLE_FOR_ALGO, DISTRIBUTIONS
 from generate_dataset import generate_dataset, write_jsonl
 from statistical_analysis import run_full_analysis, load_records

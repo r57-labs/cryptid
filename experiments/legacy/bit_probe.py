@@ -41,7 +41,7 @@ import sys
 
 # The analysis modules live in ../src; make them importable when this
 # script is run from anywhere.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
 
 import torch
 import torch.nn as nn
