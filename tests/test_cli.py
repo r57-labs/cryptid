@@ -126,6 +126,35 @@ class CompareTests(unittest.TestCase):
             self.assertEqual(d["output_comparison"]["shared_inputs"], 0)
             self.assertEqual(code, 3)
 
+    def test_conflicting_duplicate_rows_fail(self):
+        # v0.3 kept the last row for a repeated input, so a wrong digest
+        # followed by the right one was invisible (second cross-model review).
+        with tempfile.TemporaryDirectory() as tmp:
+            recs = sha256_records([f"m{i}" for i in range(30)])
+            t, r = os.path.join(tmp, "t.jsonl"), os.path.join(tmp, "r.jsonl")
+            write_jsonl(t, recs)
+            write_jsonl(r, [dict(recs[3], hash="0" * 64)] + recs)
+            code, d, _ = run_json("compare", "--target", t, "--reference", r)
+            self.assertEqual((code, d["verdict"]), (2, "FAIL"))
+            self.assertEqual(d["output_comparison"]["conflicts"]["reference"], 1)
+            self.assertEqual(d["output_comparison"]["mismatches"], 1)
+            # the same rows repeated identically are not a conflict
+            write_jsonl(r, recs + recs)
+            code, d, _ = run_json("compare", "--target", t, "--reference", r)
+            self.assertEqual((code, d["verdict"]), (0, "PASS"))
+            self.assertEqual(d["output_comparison"]["conflicts"]["reference"], 0)
+
+    def test_small_files_get_no_statistical_verdict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recs = sha256_records([f"m{i}" for i in range(20)])
+            t, r = os.path.join(tmp, "t.jsonl"), os.path.join(tmp, "r.jsonl")
+            write_jsonl(t, recs)
+            write_jsonl(r, recs)
+            code, d, _ = run_json("compare", "--target", t, "--reference", r)
+            self.assertEqual((code, d["verdict"]), (0, "PASS"))
+            self.assertIsNone(d["target"]["stats_summary"])
+            self.assertTrue(any("skipped" in n for n in d["target"]["notes"]))
+
     def test_identical_outputs_pass_and_mismatch_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             recs = sha256_records([f"m{i}" for i in range(50)])
@@ -182,13 +211,47 @@ class TestVerdictTests(unittest.TestCase):
         self.assertLess(d["meta_learner"]["probability"], d["meta_learner"]["threshold"])
 
 
+class SampleCountTests(unittest.TestCase):
+    """A run that tests nothing must not say PASS (second cross-model review)."""
+
+    def test_negative_and_zero_counts_are_usage_errors(self):
+        for n in ("-1", "0"):
+            code, out, err = run("test", "-a", "sha256", "-n", n, "--level", "quick")
+            self.assertEqual(code, 2, n)           # argparse usage error
+            self.assertIn("at least 1", err)
+            self.assertNotIn("PASS", out)
+
+    def test_below_minimum_records_is_error_not_pass(self):
+        code, out, err = run("test", "-a", "sha256", "-n", "50", "--level", "quick", "-q")
+        self.assertEqual(code, 3)
+        self.assertIn("at least 100", err)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "one.jsonl")
+            write_jsonl(path, sha256_records(["only"]))
+            code, out, err = run("test", "-i", path, "--level", "quick", "-q")
+            self.assertEqual(code, 3)
+            self.assertIn("1 record", err)
+
+    def test_generate_rejects_bad_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run("generate", "-a", "sha256", "-n", "0", "-o", os.path.join(tmp, "x.jsonl"))
+            self.assertEqual(code, 2)
+
+    def test_empty_run_is_error_in_engine(self):
+        sys.path.insert(0, os.path.join(ROOT, "cryptid"))
+        sys.path.insert(0, os.path.join(ROOT, "src"))
+        from engine import run_audit
+        r = run_audit(records=[], level="quick", verbose=False)
+        self.assertEqual(r.verdict, "ERROR")
+
+
 class InputHandlingTests(unittest.TestCase):
     """Unusable lines are an error unless the caller opts in, and are then reported."""
 
     def _file_with_bad_lines(self, tmp):
         path = os.path.join(tmp, "mixed.jsonl")
         with open(path, "w") as f:
-            for r in sha256_records([f"m{i}" for i in range(30)]):
+            for r in sha256_records([f"m{i}" for i in range(120)]):
                 f.write(json.dumps(r) + "\n")
             f.write('{"plaintext": "x", "nohash": 1}\n')
             f.write("this is not json\n")
@@ -200,12 +263,13 @@ class InputHandlingTests(unittest.TestCase):
             self.assertEqual(code, 3)
             self.assertIn("2 unusable line", err)
             self.assertIn("--skip-malformed", err)
+            self.assertIn("120 usable records", err)
 
     def test_skip_malformed_runs_and_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
             code, d, _ = run_json("test", "-i", self._file_with_bad_lines(tmp), "--level", "quick",
                                   "--skip-malformed")
-            self.assertEqual(d["n_samples"], 30)
+            self.assertEqual(d["n_samples"], 120)
             self.assertTrue(any("2 unusable input line" in n for n in d["notes"]))
 
     def test_inconsistent_digest_lengths_rejected(self):

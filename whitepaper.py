@@ -139,7 +139,7 @@ def build(out_path):
     # --- Title block ---
     story.append(P("Empirical Detection of Statistical and Differential Weaknesses in Hash Functions", TITLE))
     story.append(P("A black-box toolkit, its calibration, and what it cannot see", SUBTITLE))
-    story.append(P("John &amp; Claude | R57 Labs | Version 2.1, November 2026 (v2.0: October 2026; v1.0: April 2026)", BYLINE))
+    story.append(P("John &amp; Claude | R57 Labs | Version 2.2, November 2026 (v2.1: November 2026; v2.0: October 2026; v1.0: April 2026)", BYLINE))
 
     story.append(P("<b>Abstract</b>", H2))
     story.append(P(
@@ -220,7 +220,8 @@ def build(out_path):
 
     story.append(table([
         ["Tier", "Tests", "Needs", "Asks"],
-        ["1  Statistical suite", "bit correlation (every input × output bit) · output entropy · inter-record distance · "
+        ["1  Statistical suite", "bit correlation (every input × output bit) · output entropy (with a coverage check on "
+         "the values each output byte never takes and, from N = 1,280, a chi-square frequency test) · inter-record distance · "
          "conditional byte frequency · mutual information (permutation-tested) · multi-byte interaction "
          "(byte parities, XOR features of byte pairs and triples, sum-parity features of byte pairs, each × every "
          "output bit) + logistic-regression classifier",
@@ -601,12 +602,13 @@ def build(out_path):
 
     story.append(P("8.2 The second review (version 2.0 → 2.1)", H2))
     story.append(P(
-        "Version 2.0 was reviewed by OpenAI's Luna6 (Codex) in November 2026, from the public repository, the paper's "
-        "text and the live site, in three passes. It confirmed the fourteen-test structure, the stored results against "
-        "the README, the held-out classifier figures (recomputed), eighteen embedded vectors across thirteen algorithms, "
-        "and six instrumented implementations against hashlib. It found the following, every item of which we "
-        "reproduced; the first four are fail-open bugs in code that the first review had added and that had not itself "
-        "been reviewed:"))
+        "Version 2.0 was reviewed in November 2026 by an OpenAI model — \"6 Luna\" as the product names it; the model "
+        "describes itself as Codex on GPT-6 — from the public repository, the paper's text and the live site, in three "
+        "passes. It confirmed the fourteen-test structure, the stored results against the README, the held-out classifier "
+        "figures (recomputed), eighteen embedded vectors across thirteen algorithms, and six instrumented implementations "
+        "against hashlib. It found the following. Every code finding was reproduced by running it and every description "
+        "finding checked against the source; three of the first four are fail-open bugs in code that the first review had "
+        "added and that had not itself been reviewed (the fourth predates it):"))
     for item in [
         "<i>kat</i> reported PASS for an implementation that failed on every message, because the reference's own "
         "published-vector check was pooled with the external checks; it also reported PASS with no implementation "
@@ -648,8 +650,30 @@ def build(out_path):
         "agent with a different instruction. And code written in the course of a review is new code: it needs the same "
         "adversarial pass as the original, which is why the toolkit now carries regression tests for its verdict "
         "contract and runs them, with the published-vector self-checks and the positive controls, on every change. "
-        "The second review's findings, our verdict on each, and the complete transcript are in the repository "
-        "(docs/REVIEW-2.md)."))
+        "The second review's findings, our verdict on each, and the transcript of the review (as recorded from the "
+        "product, edited only to omit a pasted README and normalize file paths; not an authenticated log) are in the "
+        "repository (docs/REVIEW-2.md)."))
+
+    story.append(P("8.3 The second pass (version 2.1 → 2.2)", H2))
+    story.append(P(
+        "Version 2.1 was handed back to the same reviewer with the change list above as the claims under test. It "
+        "confirmed the fixes, and found: the verdict table did not match the code (two flagged tests within one tier, or "
+        "a linear signal alone, are FAIL) and a tier-1 row could read SIGNAL under a PASS without the report saying the "
+        "classifier had overridden it; a negative sample count produced an empty run that reported PASS; <i>compare</i> "
+        "kept the last row for a repeated input, so a file contradicting itself could pass; a one-record file produced a "
+        "false inter-record-distance signal; the small-N entropy thresholds rested on a hand-set margin with no "
+        "reproducible calibration, and the quoted spurious-warning rates had no script behind them; the linear-tier "
+        "regression test checked single-bit masks only; and this section misdescribed its own review (\"the first "
+        "four\", \"every finding reproduced\", \"complete transcript\", \"six scripts\", and the model's name). All "
+        "are corrected in this version. Following the reviewer's small-N probe to larger N also exposed a detection gap "
+        "that no review had reported: the entropy test's fixed 7.5-bit threshold corresponds to about 181 equiprobable "
+        "values, so a digest byte restricted to 192 of its 256 values passed the tier at every N and scored 0.35 with the "
+        "classifier at N = 5,000. The test now carries a coverage check on the values a byte never takes (exact binomial "
+        "occupancy tail) and a chi-square frequency test from N = 1,280; the 192-value byte is caught from N = 500 and "
+        "a 240-value byte from N = 1,500 (experiments/small_n_thresholds.py). Reviews sample rather than enumerate: two "
+        "of the three new fail-opens and the detection gap were present in version 2.0 and survived the first pass over "
+        "the same files. The reviewer's closing line stands for this version as well: it would not describe its review "
+        "as proving that no other issues remain."))
 
     # --- 9 Conclusion ---
     story.append(P("9. Conclusion and future work", H1))
@@ -665,7 +689,8 @@ def build(out_path):
         "with known defects."))
     story.append(Spacer(1, 10))
     story.append(P("Source code, models, experiment scripts, the JSON results behind every table, both reviews and the "
-                   "second review's transcript are at github.com/r57-labs/cryptid. Contact: mail@r57labs.com", SMALL))
+                   "second review's transcript (edited as described in §8.2) are at github.com/r57-labs/cryptid. "
+                   "Contact: mail@r57labs.com", SMALL))
 
     doc = SimpleDocTemplate(out_path, pagesize=letter, leftMargin=0.9 * inch, rightMargin=0.9 * inch,
                             topMargin=0.8 * inch, bottomMargin=0.8 * inch,
@@ -676,7 +701,7 @@ def build(out_path):
         canvas.saveState()
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(colors.HexColor("#666666"))
-        canvas.drawString(0.9 * inch, 0.5 * inch, "cryptid whitepaper v2.1 — R57 Labs — November 2026")
+        canvas.drawString(0.9 * inch, 0.5 * inch, "cryptid whitepaper v2.2 — R57 Labs — November 2026")
         canvas.drawRightString(letter[0] - 0.9 * inch, 0.5 * inch, f"{doc_.page}")
         canvas.restoreState()
 

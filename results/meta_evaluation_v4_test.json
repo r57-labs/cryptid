@@ -1,5 +1,5 @@
 {
-  "model": "../models/meta_learner_v4.json",
+  "model": "models/meta_learner_v4.json",
   "seed_base": 1700000,
   "output_bits": [
     64,
@@ -215,7 +215,7 @@
         "output_bits": 128,
         "n_samples": 10000,
         "label": 1,
-        "probability": 0.6958,
+        "probability": 0.9769,
         "predicted": 1
       },
       {
@@ -242,7 +242,7 @@
         "output_bits": 128,
         "n_samples": 10000,
         "label": 1,
-        "probability": 0.9881,
+        "probability": 0.9991,
         "predicted": 1
       },
       {
@@ -269,7 +269,7 @@
         "output_bits": 128,
         "n_samples": 10000,
         "label": 1,
-        "probability": 0.6991,
+        "probability": 0.9619,
         "predicted": 1
       },
       {
@@ -503,7 +503,7 @@
         "output_bits": 256,
         "n_samples": 10000,
         "label": 1,
-        "probability": 0.9957,
+        "probability": 0.9998,
         "predicted": 1
       },
       {
@@ -917,7 +917,7 @@
         "output_bits": 256,
         "n_samples": 10000,
         "label": 1,
-        "probability": 0.9944,
+        "probability": 0.9981,
         "predicted": 1
       },
       {

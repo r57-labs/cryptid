@@ -56,6 +56,34 @@ from engine import run_audit, AuditResult
 from report import print_report, print_comparison_report, to_json, Colors
 
 
+# Fewer records than this and the statistical suite is noise: a 256-value
+# byte-frequency table cannot be read from 50 rows, and the one-record case
+# produced a false inter-record-distance signal in v0.3 (found in the second
+# cross-model review). The classifier needs 2,000; this is the floor for
+# running the tier at all.
+MIN_RECORDS = 100
+
+
+def _positive_int(text: str) -> int:
+    """argparse type for -n: v0.3 accepted -1 (an empty run reported PASS)
+    and treated 0 as 'use the default' without saying so."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer")
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"sample count must be at least 1, got {value}")
+    return value
+
+
+def _require_records(records, source: str, verbose: bool):
+    """Exit 3 unless there are enough records for the statistical suite."""
+    if len(records) < MIN_RECORDS:
+        print(f"Error: {source}: {len(records):,} record(s); the statistical suite needs at least "
+              f"{MIN_RECORDS:,} (the classifier 2,000). Nothing was tested.", file=sys.stderr)
+        sys.exit(3)
+
+
 def _resolve_model_path(args_model: str = None) -> str:
     """Find the meta-learner model."""
     if args_model:
@@ -137,18 +165,21 @@ def cmd_test(args):
             print(f"  Loaded {len(records):,} records ({detect_output_width(records)}-bit output)")
             if load_report.get("skipped"):
                 print(f"  Skipped {load_report['skipped']:,} unusable line(s) (--skip-malformed)")
+        _require_records(records, os.path.basename(args.input), verbose)
 
     elif args.algorithm:
         # Use built-in algorithm
         name = args.algorithm
         hash_fn = _get_builtin_hash_fn(args.algorithm)
-        n = args.samples or 10000
+        n = args.samples if args.samples is not None else 10000
+        _require_records(range(n), f"-n {n}", verbose)
         records = _generate_records(hash_fn, n, verbose=verbose)
 
     elif args.command:
         # Use external command
         name = args.command.split()[0] if args.command else "external"
-        n = args.samples or 10000
+        n = args.samples if args.samples is not None else 10000
+        _require_records(range(n), f"-n {n}", verbose)
         records = generate_from_command(args.command, n, verbose=verbose)
         hash_fn = make_hash_fn_from_command(args.command)
 
@@ -174,7 +205,7 @@ def cmd_test(args):
         hash_fn=hash_fn,
         name=name,
         level=args.level,
-        n_samples=args.samples or len(records),
+        n_samples=args.samples if args.samples is not None else len(records),
         model_path=model_path,
         verbose=verbose,
     )
@@ -198,7 +229,7 @@ def cmd_generate(args):
     verbose = not args.quiet
 
     hash_fn = _get_builtin_hash_fn(args.algorithm)
-    n = args.samples or 10000
+    n = args.samples
 
     records = _generate_records(hash_fn, n, verbose=verbose)
 
@@ -244,19 +275,28 @@ def cmd_compare(args):
         print(f"  Target:    {len(records_a):,} records")
         print(f"  Reference: {len(records_b):,} records")
 
-    # Run audit on both
-    result_a = run_audit(
-        records=records_a, name=f"target ({name_a})",
-        level="quick", model_path=model_path, verbose=verbose,
-    )
-    result_b = run_audit(
-        records=records_b, name=f"reference ({name_b})",
-        level="quick", model_path=model_path, verbose=verbose,
-    )
+    # Per-file statistical summaries, only when there is enough data for
+    # them to mean anything (v0.3 ran the suite on one-record files).
+    def _audit(records, name):
+        if len(records) < MIN_RECORDS:
+            r = AuditResult(name)
+            r.n_samples = len(records)
+            r.output_bits = len(records[0]["hash"]) * 4 if records else None
+            r.notes.append(f"statistical summary skipped: {len(records):,} records < {MIN_RECORDS:,}")
+            return r
+        return run_audit(records=records, name=name, level="quick", model_path=model_path, verbose=verbose)
+
+    result_a = _audit(records_a, f"target ({name_a})")
+    result_b = _audit(records_b, f"reference ({name_b})")
 
     # Direct output comparison on shared inputs (the faithfulness check)
     divergence = _check_output_divergence(records_a, records_b)
-    if divergence["shared_inputs"] == 0:
+    if divergence["conflicts"]["target"] or divergence["conflicts"]["reference"]:
+        # A file that gives one input two different digests is a failed
+        # implementation (or a corrupt file) whatever the other file says.
+        # v0.3 kept the last row and could report PASS (second review).
+        divergence["verdict"] = "FAIL"
+    elif divergence["shared_inputs"] == 0:
         divergence["verdict"] = "INCONCLUSIVE"
     elif divergence["mismatches"] > 0:
         divergence["verdict"] = "FAIL"
@@ -285,34 +325,57 @@ def cmd_compare(args):
         sys.exit(3)
 
 
+def _digests_by_input(records: list) -> tuple[dict, list]:
+    """Map plaintext -> set of digests; also return inputs with more than one digest."""
+    table = {}
+    for rec in records:
+        table.setdefault(rec["plaintext"], set()).add(rec["hash"])
+    conflicts = [pt for pt, hs in table.items() if len(hs) > 1]
+    return table, conflicts
+
+
 def _check_output_divergence(records_a: list, records_b: list) -> dict:
-    """Compare outputs of the two datasets on the inputs they share."""
-    lookup_b = {}
-    for rec in records_b:
-        lookup_b[rec["plaintext"]] = rec["hash"]
+    """Compare outputs of the two datasets on the inputs they share.
+
+    Repeated inputs with the same digest are one input; repeated inputs with
+    different digests are reported as conflicts for that file, and any shared
+    input with a conflict on either side counts as a mismatch.
+    """
+    table_a, conflicts_a = _digests_by_input(records_a)
+    table_b, conflicts_b = _digests_by_input(records_b)
 
     mismatches = 0
     checked = 0
     examples = []
-    for rec in records_a:
-        if rec["plaintext"] in lookup_b:
+    for pt, digests_a in table_a.items():
+        if pt in table_b:
             checked += 1
-            if rec["hash"] != lookup_b[rec["plaintext"]]:
+            digests_b = table_b[pt]
+            if digests_a != digests_b or len(digests_a) > 1:
                 mismatches += 1
                 if len(examples) < 3:
-                    examples.append({"plaintext": rec["plaintext"],
-                                     "target": rec["hash"], "reference": lookup_b[rec["plaintext"]]})
+                    examples.append({"plaintext": pt, "target": sorted(digests_a)[0],
+                                     "reference": sorted(digests_b)[0]})
 
     return {
         "shared_inputs": checked,
         "mismatches": mismatches,
         "mismatch_pct": (mismatches / checked * 100) if checked else None,
         "examples": examples,
+        "conflicts": {"target": len(conflicts_a), "reference": len(conflicts_b),
+                      "examples": {"target": conflicts_a[:3], "reference": conflicts_b[:3]}},
     }
 
 
 def _print_output_divergence(div: dict, verbose: bool):
     checked, mismatches = div["shared_inputs"], div["mismatches"]
+    for side in ("target", "reference"):
+        n_conf = div["conflicts"][side]
+        if n_conf:
+            ex = div["conflicts"]["examples"][side][0]
+            print(f"\n  {Colors.red('!')} The {side} file gives {n_conf:,} input(s) more than one digest "
+                  f"(e.g. {ex[:24]!r}); an implementation that is not a function of its input has failed, "
+                  f"or the file is corrupt.")
     if checked == 0:
         print(f"  {Colors.red('INCONCLUSIVE')} — the two files share no inputs, so no outputs were compared.")
         print("  Hash the same inputs with both implementations (cryptid generate, then run each on the plaintexts).")
@@ -554,8 +617,8 @@ examples:
     input_group.add_argument("-a", "--algorithm", help="Built-in algorithm name (use list-algorithms to see options)")
     input_group.add_argument("--command", help="Shell command that hashes stdin lines to stdout")
 
-    p_test.add_argument("-n", "--samples", type=int, default=None,
-                        help="Number of samples (default: 10000, or file size)")
+    p_test.add_argument("-n", "--samples", type=_positive_int, default=None,
+                        help=f"Number of samples (default: 10000, or file size; minimum {MIN_RECORDS})")
     p_test.add_argument("--level", choices=["quick", "standard", "full"], default="standard",
                         help="Test depth: quick (stats only), standard (+differential), full (+extended+linear)")
     p_test.add_argument("--model", help="Path to meta-learner model file")
@@ -573,7 +636,7 @@ examples:
         description="Create JSONL test vector files for later analysis",
     )
     p_gen.add_argument("-a", "--algorithm", required=True, help="Algorithm name")
-    p_gen.add_argument("-n", "--samples", type=int, default=10000, help="Number of samples")
+    p_gen.add_argument("-n", "--samples", type=_positive_int, default=10000, help="Number of samples")
     p_gen.add_argument("-o", "--output", required=True, help="Output JSONL file path")
     p_gen.add_argument("-q", "--quiet", action="store_true", help="Suppress progress output")
     p_gen.set_defaults(func=cmd_generate)

@@ -148,6 +148,7 @@ def print_statistical_results(result) -> None:
         "interaction": "Multi-byte interaction",
     }
 
+    overridden = set(getattr(result, "overridden_statistical_tests", []) or [])
     for key, display in test_names.items():
         if key in result.stats:
             test = result.stats[key]
@@ -157,8 +158,8 @@ def print_statistical_results(result) -> None:
 
             indicator = signal_indicator(detected, flagged)
             sig_str = f"{sig:.3f}" if sig > 0 else "0.000"
-
-            print(f"    {display:<25} {indicator:<14} (signal: {sig_str})")
+            suffix = Colors.dim("  overridden by classifier") if key in overridden else ""
+            print(f"    {display:<25} {indicator:<14} (signal: {sig_str}){suffix}")
 
     if result.meta_learner:
         print()
@@ -320,9 +321,13 @@ def print_comparison_report(result_a, result_b, level: str = "standard") -> None
     print(f"    B: {result_b.name}")
     print()
 
-    va = verdict_color(result_a.verdict)
-    vb = verdict_color(result_b.verdict)
-    print(f"    {'Verdict':<25}  A: {va:<14}  B: {vb}")
+    def _v(r):
+        # A side with no statistical run has no verdict of its own.
+        return verdict_color(r.verdict) if r.stats else Colors.dim("not run")
+    print(f"    {'Statistical verdict':<25}  A: {_v(result_a):<14}  B: {_v(result_b)}")
+    for r, tag in ((result_a, "A"), (result_b, "B")):
+        for note in getattr(r, "notes", []) or []:
+            print(f"    {Colors.dim(tag + ': ' + note)}")
     print()
 
     # Compare statistical signals

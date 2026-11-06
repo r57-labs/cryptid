@@ -261,6 +261,23 @@ class AuditResult:
                 if isinstance(r, dict) and r.get("signal_strength", 0) > self.SIGNAL_DISPLAY_THRESHOLD]
 
     @property
+    def overridden_statistical_tests(self) -> list[str]:
+        """Tier-1 tests at SIGNAL strength that the classifier, having run, scored clean.
+
+        The six tests fire individually at their nominal rates even at
+        N >= 2,000; the classifier is the calibrated decision for the tier,
+        so such rows do not change the verdict. They are named in the notes
+        and marked in the report so a PASS is never silent about them.
+        """
+        if not self.stats or not self.meta_learner or self.meta_learner.get("skipped"):
+            return []
+        prob = self.meta_learner.get("probability", 0)
+        threshold = self.meta_learner.get("threshold", 0.4)
+        if prob >= threshold:
+            return []
+        return self.detected_statistical_tests
+
+    @property
     def marginal_statistical_tests(self) -> list[str]:
         """Tier-1 tests whose own flag fired but below the SIGNAL display threshold."""
         if not self.stats:
@@ -386,6 +403,11 @@ def run_audit(
     if records:
         result.n_samples = len(records)
         result.output_bits = len(records[0]["hash"]) * 4
+    elif not hash_fn:
+        # Nothing to test. v0.3 fell through every phase and reported PASS
+        # for an empty record list (second cross-model review).
+        result.errors.append("no records and no hash function: nothing was tested")
+        return result
 
     # --- Phase 1: Statistical suite + meta-learner (always runs) ---
     if records:
@@ -431,6 +453,12 @@ def run_audit(
                             prob = result.meta_learner.get("probability", 0)
                             label = result.meta_learner.get("label", "?")
                             print(f"\n  Meta-learner: P(weakened) = {prob:.3f} → {label}")
+                        overridden = result.overridden_statistical_tests
+                        if overridden:
+                            result.notes.append(
+                                "tier-1 rows at SIGNAL strength are overridden by the calibrated classifier "
+                                f"(P = {result.meta_learner.get('probability', 0):.3f} < "
+                                f"{result.meta_learner.get('threshold', 0.4):.2f}): " + ", ".join(overridden))
                     except Exception as e:
                         result.errors.append(f"Meta-learner error: {e}")
                 else:

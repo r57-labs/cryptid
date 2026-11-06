@@ -6,7 +6,7 @@ Black-box hash function assessment toolkit. Empirically tests whether a hash fun
 
 Accompanies the whitepaper: *Empirical Detection of Statistical and Differential Weaknesses in Hash Functions* (`whitepaper.pdf`, source in `whitepaper.py`).
 
-> **v0.3 (November 2026).** This project is built with AI models and reviewed adversarially by other AI models before anything is claimed. v0.1 was built with Claude Opus. v0.2 followed a review by Claude Fable 5.1 — a more capable model from the same vendor — which found the code correct and several claims overstated ([`docs/REVIEW.md`](docs/REVIEW.md)). v0.3 follows a review by a model from a different vendor, OpenAI's Luna6 (Codex), which found four fail-open bugs in the code the first review had *added*, a coverage gap, and more overstated claims ([`docs/REVIEW-2.md`](docs/REVIEW-2.md), with the full transcript). The short version: the detection machinery has held up under both reviews; the claims and the new code around it had not been checked the way the original code was.
+> **v0.3.1 (November 2026).** This project is built with AI models and reviewed adversarially by other AI models before anything is claimed. v0.1 was built with Claude Opus. v0.2 followed a review by Claude Fable 5.1 — a more capable model from the same vendor — which found the code correct and several claims overstated ([`docs/REVIEW.md`](docs/REVIEW.md)). v0.3 followed a review by a model from a different vendor — OpenAI's "6 Luna", as the product names it; the model describes itself as Codex on GPT-6 — which found four fail-open bugs in the code the first review had *added*, a coverage gap, and more overstated claims. v0.3.1 follows a second pass by the same reviewer over v0.3, which found three more input-handling fail-opens, a detection gap its own probe pointed at, and errors in how v0.3 described the review ([`docs/REVIEW-2.md`](docs/REVIEW-2.md), with the transcript of the first pass edited only to omit a pasted README and normalize paths). The short version: the detection machinery has held up under every review; the claims and the new code around it keep needing the same scrutiny the original code got, and no review so far has ended by saying there is nothing left to find.
 
 ## What it is — and is not
 
@@ -51,7 +51,7 @@ python cryptid.py generate -a sha256 -n 100000 -o vectors.jsonl
 Fourteen tests in four tiers. Each tier needs a different kind of access.
 
 **Tier 1 — Statistical suite** (6 tests + classifier; needs only input/output records)
-Bit correlation (every input bit × every output bit), output entropy (per bit and per byte), inter-record distance, conditional byte frequency, mutual information (permutation-tested), multi-byte interaction (byte parities, XOR features of byte pairs and triples, and sum-parity features of byte pairs, each × every output bit). A logistic-regression meta-learner combines 20 normalized features from these tests into one probability, P(weakened).
+Bit correlation (every input bit × every output bit), output entropy (per bit and per byte, with a coverage check on the values each output byte never takes and, from N = 1,280, a chi-square frequency test), inter-record distance, conditional byte frequency, mutual information (permutation-tested), multi-byte interaction (byte parities, XOR features of byte pairs and triples, and sum-parity features of byte pairs, each × every output bit). A logistic-regression meta-learner combines 20 normalized features from these tests into one probability, P(weakened).
 
 The inter-record distance test was called "avalanche" in v0.1. It is not an avalanche test — it measures the Hamming distance between digests of consecutive, unrelated records — and it has been renamed. The empirical avalanche (Strict Avalanche Criterion) test is the single-bit differential in tier 2.
 
@@ -88,12 +88,24 @@ Timings scale with sample count and output width. Measured on a 2-vCPU Linux con
 
 | Code | Verdict | Meaning |
 |------|---------|---------|
-| 0 | PASS | Every requested test ran; none found anything |
-| 1 | WARN | One test battery reported an anomaly |
-| 2 | FAIL | Two or more batteries, or a strong single signal (`compare`/`kat`: outputs disagree) |
-| 3 | ERROR | A test could not run (bad input file, missing model, implementation error), or nothing was tested (`kat`: the implementation failed on a message; `compare`: no shared inputs) — never reported as PASS |
+| 0 | PASS | Every requested tier ran and none produced a signal under the rules below |
+| 1 | WARN | Classifier P(weakened) in [0.40, 0.70); or exactly one flagged test in the differential or the extended tier; or, below 2,000 records, a tier-1 row at SIGNAL strength |
+| 2 | FAIL | Classifier P ≥ 0.70; or two or more flagged tests within the differential or the extended tier; or any linear-tier signal; or any combination that includes a FAIL-level signal (`compare`/`kat`: outputs disagree, or a file contradicts itself) |
+| 3 | ERROR | A tier could not run (bad input file, missing model, implementation error), or nothing was tested (fewer than 100 records; `kat`: the implementation failed on a message; `compare`: no shared inputs) — never reported as PASS |
 
-The meta-learner's threshold is 0.40. When P(weakened) is near or over it, the report names the features that drove the score, so a WARN is explainable even when every individual test row reads "clean". Below 2,000 samples the classifier is skipped and the six tier-1 tests decide on their own: a row marked SIGNAL makes the verdict WARN, a "marginal" row (the test's own flag below the SIGNAL threshold) is listed in the notes, and the verdict line says the tier is unclassified. Expect a spurious WARN on about 1 in 100 clean runs at N = 200 (the mutual-information permutation test's nominal 1%); none were seen in 100 runs at N = 500. (v0.2 ignored tier 1 entirely when the classifier was skipped and could print PASS above a SIGNAL row.)
+What PASS means for tier 1 depends on N. At 2,000 records and above the calibrated classifier is the decision: the six tests fire individually at their nominal rates (the mutual-information permutation test at 1%), so a row can read SIGNAL under a PASS; when that happens the row is marked *overridden by classifier* and the note under the verdict names it. Below 2,000 the classifier is skipped and the tests decide on their own: a SIGNAL row makes the verdict WARN, a "marginal" row (the test's own flag below the SIGNAL strength threshold) is listed in the notes, and the verdict line says the tier is unclassified. Fewer than 100 records is an error. Measured on five correct functions × 20 seeds (`experiments/small_n_thresholds.py` → `results/small_n_thresholds.json`): 0 of 100 runs would WARN at N = 200, 500 and 1,000. (v0.2 ignored tier 1 entirely when the classifier was skipped and could print PASS above a SIGNAL row; v0.3 fixed that and said nothing about the override at N ≥ 2,000.)
+
+The entropy test's thresholds relax below about N = 700 because the plug-in entropy estimate is biased low at small N; the relaxed values are six standard deviations below the simulated null (same script, same file; the table is embedded in `src/statistical_analysis.py`). Its detection power against a digest byte that never takes some of its values, as the fraction of 20 seeded runs caught:
+
+| N | 128 of 256 values | 160 | 192 | 224 | 240 |
+|---|---|---|---|---|---|
+| 200 | 1.00 | 0.50 | 0 | 0 | 0 |
+| 300 | 1.00 | 1.00 | 0.80 | 0 | 0 |
+| 500 | 1.00 | 1.00 | 1.00 | 0.40 | 0 |
+| 1,000 | 1.00 | 1.00 | 1.00 | 1.00 | 0.10 |
+| 1,500+ | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+
+The 192-, 224- and 240-value columns are the coverage check's doing: v0.3's thresholds alone (7.5 bits ≈ 181 equiprobable values) caught none of them at any N, and the classifier scored the 192-value byte 0.35 at N = 5,000 — a gap the second review's small-N probe pointed at.
 
 ## Input modes
 
@@ -107,7 +119,7 @@ The meta-learner's threshold is 0.40. When P(weakened) is near or over it, the r
 {"plaintext": "hello world", "hash": "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"}
 ```
 
-Only tier 1 can run from a file, because the other tiers must choose their own inputs. The plaintext is a string; the message the hash function saw is its UTF-8 encoding. Every digest must be zero-padded to the hash's full width — a file mixing digest lengths is rejected with an explanation (v0.1 ran it anyway and produced a spurious WARN). A file with lines that cannot be used (malformed JSON, no digest field) is also rejected (exit 3); `--skip-malformed` runs on the usable records and prints and records how many were left out (v0.2 skipped them with a warning and said nothing in the verdict).
+Only tier 1 can run from a file, because the other tiers must choose their own inputs. The plaintext is a string; the message the hash function saw is its UTF-8 encoding. Every digest must be zero-padded to the hash's full width — a file mixing digest lengths is rejected with an explanation (v0.1 ran it anyway and produced a spurious WARN). A file with lines that cannot be used (malformed JSON, no digest field) is also rejected (exit 3); `--skip-malformed` runs on the usable records and prints and records how many were left out (v0.2 skipped them with a warning and said nothing in the verdict). A file needs at least 100 records (v0.3 ran the suite on one record and reported a false inter-record-distance signal). In `compare`, an input that appears twice with different digests is a failure of that file's implementation — it is not a function of its input — and is reported as such (v0.3 kept the last row).
 
 ## Writing a wrapper for an external implementation
 
@@ -315,13 +327,14 @@ models/
 experiments/
   full_sweep.py            detection matrix over all built-ins + oracle controls
   out_of_family_eval.py    generalization test on weaknesses the detectors were not designed for
-  timing.py, make_figures.py
+  timing.py, make_figures.py, small_n_thresholds.py (calibration and power of the small-N entropy thresholds)
   legacy/                  neural-probe research scripts from the project's earlier phases; nothing
                            quoted anywhere comes from them, and their README lists their known flaws
 
 results/                 JSON output of the experiments quoted in the whitepaper
 docs/REVIEW.md           the v0.1 review (Claude Fable 5.1) and the v0.2 change list
-docs/REVIEW-2.md         the v0.2 review (OpenAI Luna6) and the v0.3 change list; docs/REVIEW-2-transcript.md is the conversation
+docs/REVIEW-2.md         the v0.2 review (OpenAI 6 Luna), the v0.3 change list, and the second pass that led to v0.3.1;
+                         docs/REVIEW-2-transcript.md is the first pass as recorded from the product (edited as its header says)
 whitepaper.py            builds whitepaper.pdf (ReportLab)
 ```
 

@@ -2241,9 +2241,9 @@
           "flagged": true
         },
         "entropy": {
-          "signal": 0.0,
-          "detected": false,
-          "flagged": false
+          "signal": 1.0,
+          "detected": true,
+          "flagged": true
         },
         "record_distance": {
           "signal": 0.0,
@@ -3777,6 +3777,14 @@
         "random_oracle_512"
       ],
       "reason": "see docs/REVIEW-2.md"
+    },
+    {
+      "date": "2026-11-05",
+      "algorithms": [
+        "fnv1a_64"
+      ],
+      "tier": "statistical only",
+      "reason": "v0.3.1 entropy coverage check (docs/REVIEW-2.md F3); tier 1 re-run for all 31 rows at N=10,000, only this row's entropy flag changed (P and verdict unchanged, already 1.00 / FAIL)"
     }
   ]
 }

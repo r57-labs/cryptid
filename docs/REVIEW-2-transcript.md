@@ -1,15 +1,19 @@
-# The v0.2 review: transcript
+# The v0.2 review: transcript (first pass)
 
-This is the conversation in which OpenAI's Luna6 (Codex) reviewed cryptid v0.2
-(commit `f05c986`, November 2026), reproduced here in full with John's prompts
-as he typed them. Luna6 worked from a copy of the public repository, a text
-export of whitepaper v2.0, and the live site; it had no git metadata and could
-not render the PDF. `file:line` references are to commit `f05c986`.
+This is the conversation in which an OpenAI model — "6 Luna" as the product
+names it; it describes itself as Codex on GPT-6 — reviewed cryptid v0.2
+(commit `f05c986`, November 2026), with John's prompts as he typed them. The
+reviewer worked from a copy of the public repository, a text export of
+whitepaper v2.0, and the live site; it had no git metadata and could not
+render the PDF. `file:line` references are to commit `f05c986`.
 
-The only edits: local filesystem paths in Luna6's citations are made
-repository-relative, and the README text pasted into the first prompt is
-omitted. Our verdict on each finding, and what changed, is in
-[REVIEW-2.md](REVIEW-2.md).
+What this is and is not. It was copied from the product's conversation view,
+so it is a record of the text exchanged, not an authenticated run log: it
+does not preserve the reviewer's tool calls, and it cannot by itself prove
+which model ran. The edits are exactly two: local filesystem paths in the
+reviewer's citations are made repository-relative, and the README text pasted
+into the first prompt is omitted. Our verdict on each finding, what changed,
+and the reviewer's second pass over v0.3 are in [REVIEW-2.md](REVIEW-2.md).
 
 The prompting is deliberately plain. The instruction that produced the useful
 answers was not a clever one; it was asking, after a confident first pass,
@@ -31,7 +35,7 @@ here are some of the claims:
 *[the README's claims, pasted — omitted here; they are the README at commit f05c986]*
 
 
-**Luna6:**
+**Reviewer (6 Luna):**
 
 Findings
 The headline structure is accurate: the code has 14 analysis tests across four tiers—6 statistical, 4 differential, 3 extended, and 1 linear approximation—plus a meta-learner. The README also correctly says that JSONL input supports only Tier 1; the other tiers need a callable implementation or command. Those limits should stay beside any claim that the toolkit can test “anything that returns a digest.”
@@ -48,7 +52,7 @@ The two command findings are directly reproducible. If you want me to check the 
 **John:**
 alright, i appreciate the work!  just to confirm, have we done a deep dive on the entire code base as well as the claims, and are saying there are no additional overstatements or incorrect statements or assumptions other than those you've identified above?  if you want to do another pass just to verify that's no trouble :)
 
-**Luna6:**
+**Reviewer (6 Luna):**
 
 No—I can’t say there are no other issues. My first answer was too broad for the work I’d done. This second pass covered the CLI and core analysis paths, checked the main stored results against the README, and traced more of the whitepaper’s methodology. It found additional problems. It still wasn’t a formal, line-by-line audit of every legacy experiment, and I couldn’t inspect the shipped PDF itself: this environment lacks PDF extraction and rendering tools.
 Additional findings
@@ -75,7 +79,7 @@ alright, that's great stuff! i'm excited to use this info to improve everything,
 - if you're able to access and review https://cryptid.r57labs.com , this is a github-pages based web site from the git repo that we're using to represent the tool. so if that's something you haven't reviewed and assessed from the repo copy you have in the working folder, maybe you could access the web site and review it's contents for errors, omissions, overstatements, etc?
 
 
-**Luna6:**
+**Reviewer (6 Luna):**
 
 I reviewed the new whitepaper text and the live cryptid site, then extended the code review into the experiment scripts. I found more issues. I can’t honestly certify that no others exist: this is a substantial cross-check, not a formal proof or a guarantee that every possible edge case has been found.
 Whitepaper and site

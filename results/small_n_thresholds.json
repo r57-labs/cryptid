@@ -1,0 +1,276 @@
+{
+  "seed": 20261105,
+  "embedded_table": [
+    [
+      100,
+      6.285,
+      0.0716
+    ],
+    [
+      150,
+      6.709,
+      0.0644
+    ],
+    [
+      200,
+      6.974,
+      0.0578
+    ],
+    [
+      300,
+      7.289,
+      0.0482
+    ],
+    [
+      500,
+      7.58,
+      0.0343
+    ],
+    [
+      750,
+      7.731,
+      0.0235
+    ],
+    [
+      1000,
+      7.803,
+      0.0175
+    ],
+    [
+      1500,
+      7.873,
+      0.0112
+    ],
+    [
+      2000,
+      7.906,
+      0.0084
+    ]
+  ],
+  "z": {
+    "byte": 6.0,
+    "bit": 5.0
+  },
+  "null": {
+    "100": {
+      "columns": 9600,
+      "byte_mean": 6.2854,
+      "byte_sd": 0.0716,
+      "byte_min": 5.9812,
+      "byte_threshold": 5.8554,
+      "byte_headroom": 0.1258,
+      "bit_min": 0.8687,
+      "bit_threshold": 0.8197,
+      "bit_headroom": 0.049
+    },
+    "150": {
+      "columns": 9600,
+      "byte_mean": 6.7091,
+      "byte_sd": 0.0644,
+      "byte_min": 6.4578,
+      "byte_threshold": 6.3226,
+      "byte_headroom": 0.1352,
+      "bit_min": 0.9115,
+      "bit_threshold": 0.8798,
+      "bit_headroom": 0.0317
+    },
+    "200": {
+      "columns": 9600,
+      "byte_mean": 6.9739,
+      "byte_sd": 0.0578,
+      "byte_min": 6.7459,
+      "byte_threshold": 6.6272,
+      "byte_headroom": 0.1187,
+      "bit_min": 0.9295,
+      "bit_threshold": 0.9098,
+      "bit_headroom": 0.0197
+    },
+    "300": {
+      "columns": 9600,
+      "byte_mean": 7.289,
+      "byte_sd": 0.0482,
+      "byte_min": 7.1189,
+      "byte_threshold": 6.9998,
+      "byte_headroom": 0.1191,
+      "bit_min": 0.9532,
+      "bit_threshold": 0.9399,
+      "bit_headroom": 0.0133
+    },
+    "500": {
+      "columns": 9600,
+      "byte_mean": 7.5798,
+      "byte_sd": 0.0343,
+      "byte_min": 7.4487,
+      "byte_threshold": 7.3742,
+      "byte_headroom": 0.0745,
+      "bit_min": 0.9732,
+      "bit_threshold": 0.95,
+      "bit_headroom": 0.0232
+    },
+    "750": {
+      "columns": 3840,
+      "byte_mean": 7.7306,
+      "byte_sd": 0.0235,
+      "byte_min": 7.625,
+      "byte_threshold": 7.5,
+      "byte_headroom": 0.125,
+      "bit_min": 0.9839,
+      "bit_threshold": 0.95,
+      "bit_headroom": 0.0339
+    },
+    "1000": {
+      "columns": 3840,
+      "byte_mean": 7.8032,
+      "byte_sd": 0.0175,
+      "byte_min": 7.7135,
+      "byte_threshold": 7.5,
+      "byte_headroom": 0.2135,
+      "bit_min": 0.9874,
+      "bit_threshold": 0.95,
+      "bit_headroom": 0.0374
+    },
+    "1500": {
+      "columns": 3840,
+      "byte_mean": 7.8731,
+      "byte_sd": 0.0112,
+      "byte_min": 7.8277,
+      "byte_threshold": 7.5,
+      "byte_headroom": 0.3277,
+      "bit_min": 0.9914,
+      "bit_threshold": 0.95,
+      "bit_headroom": 0.0414
+    },
+    "2000": {
+      "columns": 3840,
+      "byte_mean": 7.9058,
+      "byte_sd": 0.0084,
+      "byte_min": 7.8721,
+      "byte_threshold": 7.5,
+      "byte_headroom": 0.3721,
+      "bit_min": 0.9938,
+      "bit_threshold": 0.95,
+      "bit_headroom": 0.0438
+    }
+  },
+  "power": {
+    "100": {
+      "240": 0.0,
+      "224": 0.0,
+      "192": 0.0,
+      "160": 0.0,
+      "128": 0.0
+    },
+    "150": {
+      "240": 0.0,
+      "224": 0.0,
+      "192": 0.0,
+      "160": 0.0,
+      "128": 0.8
+    },
+    "200": {
+      "240": 0.0,
+      "224": 0.0,
+      "192": 0.0,
+      "160": 0.5,
+      "128": 1.0
+    },
+    "300": {
+      "240": 0.0,
+      "224": 0.0,
+      "192": 0.8,
+      "160": 1.0,
+      "128": 1.0
+    },
+    "500": {
+      "240": 0.0,
+      "224": 0.4,
+      "192": 1.0,
+      "160": 1.0,
+      "128": 1.0
+    },
+    "750": {
+      "240": 0.0,
+      "224": 0.95,
+      "192": 1.0,
+      "160": 1.0,
+      "128": 1.0
+    },
+    "1000": {
+      "240": 0.1,
+      "224": 1.0,
+      "192": 1.0,
+      "160": 1.0,
+      "128": 1.0
+    },
+    "1500": {
+      "240": 1.0,
+      "224": 1.0,
+      "192": 1.0,
+      "160": 1.0,
+      "128": 1.0
+    },
+    "2000": {
+      "240": 1.0,
+      "224": 1.0,
+      "192": 1.0,
+      "160": 1.0,
+      "128": 1.0
+    },
+    "5000": {
+      "240": 1.0,
+      "224": 1.0,
+      "192": 1.0,
+      "160": 1.0,
+      "128": 1.0
+    }
+  },
+  "clean": {
+    "200": {
+      "runs": 100,
+      "would_warn": 0,
+      "rate": 0.0,
+      "by_test": {
+        "marginal:mutual_information": 1
+      },
+      "functions": [
+        "sha256",
+        "sha3_256",
+        "siphash24",
+        "md5",
+        "sha512"
+      ],
+      "seeds": "100..119"
+    },
+    "500": {
+      "runs": 100,
+      "would_warn": 0,
+      "rate": 0.0,
+      "by_test": {},
+      "functions": [
+        "sha256",
+        "sha3_256",
+        "siphash24",
+        "md5",
+        "sha512"
+      ],
+      "seeds": "100..119"
+    },
+    "1000": {
+      "runs": 100,
+      "would_warn": 0,
+      "rate": 0.0,
+      "by_test": {
+        "marginal:mutual_information": 1
+      },
+      "functions": [
+        "sha256",
+        "sha3_256",
+        "siphash24",
+        "md5",
+        "sha512"
+      ],
+      "seeds": "100..119"
+    }
+  },
+  "seconds": 146.4
+}

@@ -228,6 +228,117 @@ def bit_correlation_analysis(
 
 # --- Test 2: Output Entropy ---
 
+
+# --- Small-N entropy thresholds -------------------------------------------
+#
+# The fixed thresholds (bit 0.95, byte 7.5) are what the meta-learner was
+# calibrated with and apply unchanged from about N = 700 up. Below that the
+# plug-in entropy estimate is biased low (a 256-symbol byte cannot even show
+# 8 bits from 200 samples: log2(200) = 7.64), so a fixed threshold flagged
+# every correct function at small N. The N-aware thresholds below only ever
+# relax the fixed ones.
+#
+# Byte threshold: the null distribution of a column's plug-in entropy --
+# N uniform bytes -- was simulated (experiments/small_n_thresholds.py, seed
+# 20261105, 9,600 columns per N up to 500 and 3,840 above) and its mean and
+# standard deviation are tabulated here; the threshold is mean - 6 sd,
+# interpolated linearly in 1/N. Six standard deviations is far beyond the
+# deepest minimum seen over ~10^4 columns (about 4 sd), so a correct
+# function should essentially never trip it; the cost is detection power
+# at the smallest N, which the same script measures. The asymptotic
+# Miller-Madow expansion is not used because it fails for N near the
+# alphabet size (its second-order form predicts 5.37 bits at N = 100
+# against 6.29 observed).
+#
+# Bit threshold: a bit whose frequency is 5 sigma from 1/2 (sigma =
+# 0.5/sqrt(N)) has entropy 1 - (2/ln 2) * delta^2; that is the threshold,
+# capped at 0.95. P(one correct bit is flagged) ~ 6e-7.
+#
+# v0.3 used a Miller-Madow expectation minus a hand-set margin, which the
+# second cross-model review correctly described as uncalibrated.
+_BYTE_NULL = [  # (N, mean plug-in byte entropy, sd), uniform bytes
+    (100, 6.285, 0.0716), (150, 6.709, 0.0644), (200, 6.974, 0.0578),
+    (300, 7.289, 0.0482), (500, 7.580, 0.0343), (750, 7.731, 0.0235),
+    (1000, 7.803, 0.0175), (1500, 7.873, 0.0112), (2000, 7.906, 0.0084),
+]
+BYTE_NULL_Z = 6.0
+BIT_NULL_Z = 5.0
+MIN_RECORDS_FOR_ENTROPY = 100
+
+
+def _byte_null(n: int) -> tuple[float, float]:
+    """Mean and sd of the null per-column byte entropy at N, interpolated in 1/N."""
+    if n <= _BYTE_NULL[0][0]:
+        return _BYTE_NULL[0][1], _BYTE_NULL[0][2]
+    if n >= _BYTE_NULL[-1][0]:
+        return _BYTE_NULL[-1][1], _BYTE_NULL[-1][2]
+    for (n0, m0, s0), (n1, m1, s1) in zip(_BYTE_NULL, _BYTE_NULL[1:]):
+        if n0 <= n <= n1:
+            t = (1.0 / n - 1.0 / n0) / (1.0 / n1 - 1.0 / n0)
+            return m0 + t * (m1 - m0), s0 + t * (s1 - s0)
+    return _BYTE_NULL[-1][1], _BYTE_NULL[-1][2]
+
+
+def entropy_thresholds(n: int) -> tuple[float, float]:
+    """(bit_threshold, byte_threshold) for a dataset of n records.
+
+    Never stricter than the fixed (0.95, 7.5) the classifier was calibrated
+    with; equal to them from about N = 700 (byte) and N = 500 (bit) up.
+    """
+    delta = BIT_NULL_Z * 0.5 / math.sqrt(max(n, 1))
+    bit_threshold = min(0.95, 1.0 - (2.0 / math.log(2)) * delta * delta)
+    mean, sd = _byte_null(n)
+    byte_threshold = min(7.5, mean - BYTE_NULL_Z * sd)
+    return round(bit_threshold, 4), round(byte_threshold, 4)
+
+
+
+# Output-support checks inside the entropy test (added in v0.3.1). The entropy
+# thresholds alone cannot see a digest byte that simply never takes some of
+# its 256 values unless the loss is severe: the fixed 7.5-bit threshold is
+# crossed only below about 181 equiprobable values, so a byte restricted to
+# 192 values (7.58 bits) passed the tier at every N and the classifier scored
+# it 0.35 at N = 5,000 (found while answering the second cross-model review's
+# small-N probe, docs/REVIEW-2.md). Two cheap checks close that gap:
+#   coverage  the number of values a column never takes, against the
+#             occupancy distribution for a uniform byte: each value is
+#             missing with probability (1 - 1/256)^N, so the missing count
+#             is (to a conservative approximation, the events being
+#             negatively correlated) Binomial(256, q), and the exact upper
+#             tail is the p-value. A z-score on the occupancy count was
+#             tried first and is wrong here: at N = 3,000 the count's sd is
+#             0.045, so one missing value -- which happens in 0.2% of
+#             clean columns -- read as 22 sigma.
+#   chi2      Pearson's chi-square over the 256 values when every bin's
+#             expectation is at least 5 (N >= 1,280), with the
+#             Wilson-Hilferty normal approximation to chi2(255) for the
+#             tail; catches skewed frequencies with full support.
+# Both fire at p < 1e-8 per column (chi2: z > 5.6), so a correct function
+# never trips them and the classifier's inputs are unchanged on clean data.
+SUPPORT_P = 1e-8
+CHI2_Z = 5.6
+CHI2_MIN_RECORDS = 1280
+
+
+def _binom_tail(k: int, n: int, p: float) -> float:
+    """P(Binomial(n, p) >= k), summed in log space."""
+    if k <= 0:
+        return 1.0
+    if p <= 0.0:
+        return 0.0
+    lp, lq = math.log(p), math.log1p(-p)
+    terms = [math.lgamma(n + 1) - math.lgamma(i + 1) - math.lgamma(n - i + 1) + i * lp + (n - i) * lq
+             for i in range(k, n + 1)]
+    m = max(terms)
+    return min(1.0, math.exp(m) * sum(math.exp(t - m) for t in terms))
+
+
+def _chi2_z(chi2: float, df: int) -> float:
+    """Wilson-Hilferty normal equivalent of a chi-square statistic."""
+    c = 2.0 / (9.0 * df)
+    return ((chi2 / df) ** (1.0 / 3.0) - (1.0 - c)) / math.sqrt(c)
+
+
 def entropy_analysis(records: list[dict]) -> dict:
     """
     Measure per-byte and per-bit entropy of hash outputs.
@@ -253,32 +364,31 @@ def entropy_analysis(records: list[dict]) -> dict:
         bit_entropies.append(entropy)
 
     byte_entropies = []
+    support_p = []      # coverage test: p-value of the number of values a column never takes
+    chi2_z = []         # frequency test over 256 bins (N >= 1280 only)
+    q_missing = (1.0 - 1.0 / 256.0) ** n
     for byte_pos in range(n_output_bytes):
         byte_values = [bytes.fromhex(r["hash"])[byte_pos] for r in records]
         counts = Counter(byte_values)
         entropy = sum(-(c / n) * math.log2(c / n) for c in counts.values() if c > 0)
         byte_entropies.append(entropy)
+        support_p.append(_binom_tail(256 - len(counts), 256, q_missing))
+        if n >= CHI2_MIN_RECORDS:
+            expected = n / 256.0
+            chi2 = sum((counts.get(v, 0) - expected) ** 2 / expected for v in range(256))
+            chi2_z.append(_chi2_z(chi2, 255))
 
     mean_bit_entropy = sum(bit_entropies) / len(bit_entropies)
     min_bit_entropy = min(bit_entropies)
     mean_byte_entropy = sum(byte_entropies) / len(byte_entropies)
     min_byte_entropy = min(byte_entropies)
 
-    # Thresholds. The fixed values (bit 0.95, byte 7.5) are what the
-    # meta-learner was calibrated with and apply unchanged from roughly
-    # N = 1,000 up. Below that the plug-in entropy estimate is biased low
-    # (a 256-symbol byte cannot even reach 8 bits from 200 samples:
-    # log2(200) = 7.64), so a fixed threshold flagged every correct function
-    # at small N. The N-aware forms below only ever relax the fixed ones:
-    # the byte threshold follows the Miller-Madow bias 255/(2N ln 2) less a
-    # margin for the minimum over all output bytes; the bit threshold is the
-    # entropy of a bit whose frequency sits 5 sigma from 1/2.
-    delta = 5.0 * 0.5 / math.sqrt(n)
-    bit_threshold = min(0.95, 1.0 - (2.0 / math.log(2)) * delta * delta - 0.01)
-    expected_byte_entropy = 8.0 - 255.0 / (2.0 * n * math.log(2))
-    byte_threshold = min(7.5, expected_byte_entropy - max(0.25, 8.0 / math.sqrt(n)))
+    bit_threshold, byte_threshold = entropy_thresholds(n)
+    min_support_p = min(support_p) if support_p else 1.0
+    max_chi2_z = max(chi2_z) if chi2_z else 0.0
+    support_signal = min_support_p < SUPPORT_P or max_chi2_z > CHI2_Z
 
-    signal = min_bit_entropy < bit_threshold or min_byte_entropy < byte_threshold
+    signal = min_bit_entropy < bit_threshold or min_byte_entropy < byte_threshold or support_signal
 
     # Signal strength: how far below ideal is the worst bit?
     # 0.0 at threshold, 1.0 at severe (0.5 or below)
@@ -286,6 +396,11 @@ def entropy_analysis(records: list[dict]) -> dict:
         signal_strength = min(1.0, (bit_threshold - min_bit_entropy) / 0.45)
     elif min_byte_entropy < byte_threshold:
         signal_strength = min(1.0, (byte_threshold - min_byte_entropy) / 3.5)
+    elif support_signal:
+        # 0 at the decision threshold, 1.0 twenty orders of magnitude (or ten sigma) beyond it
+        excess = max((-math.log10(max(min_support_p, 1e-300)) - (-math.log10(SUPPORT_P))) / 20.0,
+                     (max_chi2_z - CHI2_Z) / 10.0)
+        signal_strength = min(1.0, max(0.0, excess))
     else:
         signal_strength = 0.0
 
@@ -306,6 +421,11 @@ def entropy_analysis(records: list[dict]) -> dict:
         "lowest_entropy_byte": byte_entropies.index(min_byte_entropy),
         "bit_threshold": round(bit_threshold, 4),
         "byte_threshold": round(byte_threshold, 4),
+        "min_support_p": float(f"{min_support_p:.3g}"),
+        "support_p_threshold": SUPPORT_P,
+        "max_chi2_z": round(max_chi2_z, 2) if chi2_z else None,
+        "chi2_z_threshold": CHI2_Z,
+        "support_signal": support_signal,
         "signal": signal,
         "signal_strength": signal_strength,
     }
@@ -329,6 +449,15 @@ def record_distance_analysis(records: list[dict], n_pairs: int = 2000) -> dict:
     """
     n_output_bits = len(hex_to_bits(records[0]["hash"]))
     n = min(n_pairs, len(records) - 1)
+    if n < 1:
+        # One record has no pairs. v0.3 compared a mean of zero with 0.5 and
+        # reported a full-strength signal (second cross-model review).
+        return {"test": "record_distance", "n_pairs": 0, "n_output_bits": n_output_bits,
+                "mean_flip_ratio": None, "expected_flip_ratio": 0.5, "deviation_from_expected": 0.0,
+                "stdev_flip_ratio": None, "expected_stdev": None, "stdev_ratio": 1.0,
+                "min_flip_ratio": None, "max_flip_ratio": None,
+                "signal": False, "signal_strength": 0.0,
+                "note": "fewer than two records; no pairs to measure"}
 
     flip_ratios = []
     for i in range(n):
