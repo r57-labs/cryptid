@@ -242,10 +242,12 @@ def bit_correlation_analysis(
 # N uniform bytes -- was simulated (experiments/small_n_thresholds.py, seed
 # 20261105, 9,600 columns per N up to 500 and 3,840 above) and its mean and
 # standard deviation are tabulated here; the threshold is mean - 6 sd,
-# interpolated linearly in 1/N. Six standard deviations is far beyond the
-# deepest minimum seen over ~10^4 columns (about 4 sd), so a correct
-# function should essentially never trip it; the cost is detection power
-# at the smallest N, which the same script measures. The asymptotic
+# interpolated linearly in 1/N. The deepest minimum seen over ~10^4
+# simulated columns per N is about 4 sd below the mean, so six is an
+# extrapolation past what was measured, chosen so that a correct function
+# on distinct inputs does not trip it (none did in the simulation or in
+# 100 clean runs per N -- evidence, not a proof); the cost is detection
+# power at the smallest N, which the same script measures. The asymptotic
 # Miller-Madow expansion is not used because it fails for N near the
 # alphabet size (its second-order form predicts 5.37 bits at N = 100
 # against 6.29 observed).
@@ -302,21 +304,29 @@ def entropy_thresholds(n: int) -> tuple[float, float]:
 # small-N probe, docs/REVIEW-2.md). Two cheap checks close that gap:
 #   coverage  the number of values a column never takes, against the
 #             occupancy distribution for a uniform byte: each value is
-#             missing with probability (1 - 1/256)^N, so the missing count
-#             is (to a conservative approximation, the events being
-#             negatively correlated) Binomial(256, q), and the exact upper
-#             tail is the p-value. A z-score on the occupancy count was
-#             tried first and is wrong here: at N = 3,000 the count's sd is
-#             0.045, so one missing value -- which happens in 0.2% of
-#             clean columns -- read as 22 sigma.
+#             missing with probability q = (1 - 1/256)^N. The missing
+#             count is modelled as Binomial(256, q) and its upper tail is
+#             the p-value. That is an approximation, not the exact occupancy
+#             distribution -- the missing-value events are negatively
+#             correlated -- and it is conservative: the exact tail is
+#             smaller (checked independently in the third cross-model
+#             review pass), so the approximation flags less, not more.
+#             A z-score on the occupancy count was tried first and is wrong
+#             here: at N = 3,000 the count's sd is 0.045, so one missing
+#             value -- which happens in 0.2% of clean columns -- read as
+#             22 sigma.
 #   chi2      Pearson's chi-square over the 256 values when every bin's
 #             expectation is at least 5 (N >= 1,280), with the
 #             Wilson-Hilferty normal approximation to chi2(255) for the
 #             tail; catches skewed frequencies with full support.
-# Both fire at p < 1e-8 per column (chi2: z > 5.6), so a correct function
-# never trips them and the classifier's inputs are unchanged on clean data.
+# Both fire at about p < 1e-8 per column (coverage: p < 1e-8; chi2: z > 5.7,
+# a tail of ~6e-9). On distinct inputs a correct function has not tripped
+# either in any simulation or clean run so far (experiments/
+# small_n_thresholds.py), and the classifier's inputs are unchanged on such
+# data; a file that repeats the same input is not a sample of the function
+# and is deduplicated before the tier runs (v0.3.2).
 SUPPORT_P = 1e-8
-CHI2_Z = 5.6
+CHI2_Z = 5.7
 CHI2_MIN_RECORDS = 1280
 
 

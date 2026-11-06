@@ -49,8 +49,8 @@ from input_handler import generate_plaintexts  # noqa: E402
 from generate_dataset import HASH_FUNCTIONS  # noqa: E402
 
 N_GRID = [100, 150, 200, 300, 500, 750, 1000, 1500, 2000]
-POWER_N_GRID = N_GRID + [5000]
-SUPPORTS = [240, 224, 192, 160, 128]
+POWER_N_GRID = N_GRID + [3000, 4000, 5000]
+SUPPORTS = [254, 240, 224, 192, 160, 128]
 CLEAN_FUNCTIONS = ["sha256", "sha3_256", "siphash24", "md5", "sha512"]
 
 
@@ -87,34 +87,48 @@ def null_distribution(seed: int, columns: int = 64) -> dict:
 
 
 def _support_fn(support: int, table_seed: int):
-    """SHA-256 with its first digest byte mapped onto a random `support`-value subset.
+    """SHA-256 with its first digest byte mapped (near-)uniformly onto a random
+    `support`-value subset.
 
-    Bit-balanced by construction (random subset), so only the byte entropy
-    sees it; `h[0] % support` would also skew the top bit and is easier.
+    The index is taken from sixteen digest bits, so every value of the subset
+    is equiprobable to within 1 part in 341 (65536 mod 192 = 64). v0.3.1 used
+    `h[0] % support`, which for a support that does not divide 256 gives
+    256 - support of the values twice the probability of the rest; that skew
+    let the byte-entropy threshold fire at N = 300 for the 192-value defect
+    and made the table overstate the coverage check (third cross-model
+    review pass). The subset is random, so the bits stay balanced.
     """
     table = random.Random(table_seed).sample(range(256), support)
 
     def fn(message):
         data = message if isinstance(message, bytes) else str(message).encode("utf-8")
         h = bytearray(hashlib.sha256(data).digest())
-        h[0] = table[h[0] % support]
+        h[0] = table[((h[0] << 8) | h[1]) % support]
         return bytes(h).hex()
     return fn
 
 
 def power(seeds: int) -> dict:
+    """Fraction of runs caught, and by which part of the test: the entropy
+    thresholds (bit/byte) or the support checks (coverage / chi-square)."""
     out = {}
     for n in POWER_N_GRID:
         row = {}
         for s in SUPPORTS:
-            caught = 0
+            caught = by_threshold = by_support = 0
             for seed in range(seeds):
                 fn = _support_fn(s, 1000 + seed)
                 recs = [{"plaintext": pt, "hash": fn(pt)} for pt in generate_plaintexts(n, random.Random(seed))]
-                caught += bool(entropy_analysis(recs)["signal"])
-            row[str(s)] = round(caught / seeds, 3)
+                r = entropy_analysis(recs)
+                caught += bool(r["signal"])
+                by_support += bool(r["support_signal"])
+                by_threshold += bool(r["min_bit_entropy"] < r["bit_threshold"] or r["min_byte_entropy"] < r["byte_threshold"])
+            row[str(s)] = {"caught": round(caught / seeds, 3), "by_threshold": round(by_threshold / seeds, 3),
+                           "by_support_check": round(by_support / seeds, 3)}
         out[str(n)] = row
-        print(f"  power N={n:5d}: " + "  ".join(f"S={s}: {row[str(s)]:.2f}" for s in SUPPORTS), flush=True)
+        print(f"  power N={n:5d}: " + "  ".join(f"S={s}: {row[str(s)]['caught']:.2f}"
+                                               f"(t{row[str(s)]['by_threshold']:.2f}/s{row[str(s)]['by_support_check']:.2f})"
+                                               for s in SUPPORTS), flush=True)
     return out
 
 

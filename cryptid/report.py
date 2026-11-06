@@ -67,6 +67,8 @@ def verdict_color(verdict: str) -> str:
         return Colors.red(verdict)
     elif verdict == "ERROR":
         return Colors.red(verdict)
+    elif verdict == "NOT RUN":
+        return Colors.dim(verdict)
     return verdict
 
 
@@ -322,8 +324,7 @@ def print_comparison_report(result_a, result_b, level: str = "standard") -> None
     print()
 
     def _v(r):
-        # A side with no statistical run has no verdict of its own.
-        return verdict_color(r.verdict) if r.stats else Colors.dim("not run")
+        return verdict_color(r.verdict)
     print(f"    {'Statistical verdict':<25}  A: {_v(result_a):<14}  B: {_v(result_b)}")
     for r, tag in ((result_a, "A"), (result_b, "B")):
         for note in getattr(r, "notes", []) or []:

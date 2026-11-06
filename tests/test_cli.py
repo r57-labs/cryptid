@@ -145,6 +145,8 @@ class CompareTests(unittest.TestCase):
             self.assertEqual(d["output_comparison"]["conflicts"]["reference"], 0)
 
     def test_small_files_get_no_statistical_verdict(self):
+        # Below the record floor the per-file statistical result must say it
+        # did not run, not PASS (v0.3.1 said PASS -- third review pass).
         with tempfile.TemporaryDirectory() as tmp:
             recs = sha256_records([f"m{i}" for i in range(20)])
             t, r = os.path.join(tmp, "t.jsonl"), os.path.join(tmp, "r.jsonl")
@@ -152,8 +154,12 @@ class CompareTests(unittest.TestCase):
             write_jsonl(r, recs)
             code, d, _ = run_json("compare", "--target", t, "--reference", r)
             self.assertEqual((code, d["verdict"]), (0, "PASS"))
-            self.assertIsNone(d["target"]["stats_summary"])
-            self.assertTrue(any("skipped" in n for n in d["target"]["notes"]))
+            for side in ("target", "reference"):
+                self.assertEqual(d[side]["verdict"], "NOT RUN", side)
+                self.assertIsNone(d[side]["stats_summary"])
+                self.assertTrue(any("skipped" in n for n in d[side]["notes"]))
+            code, out, _ = run("compare", "--target", t, "--reference", r, "-q")
+            self.assertIn("NOT RUN", out)
 
     def test_identical_outputs_pass_and_mismatch_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -240,9 +246,49 @@ class SampleCountTests(unittest.TestCase):
     def test_empty_run_is_error_in_engine(self):
         sys.path.insert(0, os.path.join(ROOT, "cryptid"))
         sys.path.insert(0, os.path.join(ROOT, "src"))
-        from engine import run_audit
-        r = run_audit(records=[], level="quick", verbose=False)
+        from engine import run_audit, MIN_RECORDS
+        self.assertEqual(run_audit(records=[], level="quick", verbose=False).verdict, "ERROR")
+        # v0.3.1 bypasses (third review pass): a callable with no records at
+        # the quick level, and a record count below the floor via the API.
+        self.assertEqual(run_audit(records=[], hash_fn=lambda m: "00", level="quick", verbose=False).verdict,
+                         "ERROR")
+        recs = sha256_records([f"m{i}" for i in range(MIN_RECORDS - 1)])
+        r = run_audit(records=recs, level="quick", verbose=False)
         self.assertEqual(r.verdict, "ERROR")
+        self.assertTrue(any("at least" in e for e in r.errors))
+
+
+class RepeatedInputTests(unittest.TestCase):
+    """A repeated input is the same sample twice (third review pass)."""
+
+    def test_one_correct_row_repeated_is_not_a_weakness(self):
+        # v0.3.1: WARN at 100 copies, FAIL with P = 1.0 at 2,000 copies.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "rep.jsonl")
+            write_jsonl(path, sha256_records(["same input"]) * 2000)
+            code, out, err = run("test", "-i", path, "--level", "quick", "-q")
+            self.assertEqual(code, 3)                     # one distinct record: below the floor
+            self.assertNotIn("FAIL", out)
+            self.assertIn("1 record", err)
+
+    def test_repeated_rows_are_collapsed_and_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "rep3.jsonl")
+            recs = sha256_records([f"in{i}" for i in range(150)]) * 3
+            write_jsonl(path, recs)
+            code, d, _ = run_json("test", "-i", path, "--level", "quick")
+            self.assertEqual(d["n_samples"], 150)
+            self.assertEqual(d["verdict"], "PASS")
+            self.assertTrue(any("300 repeated row" in n for n in d["notes"]))
+
+    def test_self_contradicting_file_is_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "contra.jsonl")
+            recs = sha256_records([f"in{i}" for i in range(120)])
+            write_jsonl(path, recs + [dict(recs[5], hash="f" * 64)])
+            code, out, err = run("test", "-i", path, "--level", "quick", "-q")
+            self.assertEqual(code, 3)
+            self.assertIn("two different digests", err)
 
 
 class InputHandlingTests(unittest.TestCase):

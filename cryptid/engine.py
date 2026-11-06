@@ -25,6 +25,14 @@ if _src_dir not in sys.path:
 # cause feature instability that leads to false positives.
 META_LEARNER_MIN_SAMPLES = 2000
 
+# Fewer records than this and the statistical suite is noise: a 256-value
+# byte-frequency table cannot be read from 50 rows, and one record produced
+# a false inter-record-distance signal in v0.3. Enforced here, not only in
+# the CLI: v0.3.1 put the floor in the CLI and run_audit() still returned
+# PASS for 99 records or for an empty list with a callable (third
+# cross-model review pass).
+MIN_RECORDS = 100
+
 
 def _load_meta_learner(model_path: str) -> dict:
     """Load the trained meta-learner model."""
@@ -177,7 +185,12 @@ class AuditResult:
 
     @property
     def verdict(self) -> str:
-        """Compute overall verdict: PASS, WARN, FAIL, or ERROR.
+        """Compute overall verdict: PASS, WARN, FAIL, ERROR, or NOT RUN.
+
+        NOT RUN: no tier produced a result and nothing failed -- the
+        caller skipped the audit (compare does this for files below the
+        record floor). v0.3.1 reported such a result as PASS in compare's
+        per-file JSON (third cross-model review pass).
 
         Any phase that failed to run makes the verdict ERROR: a PASS must
         mean every requested test ran and found nothing. (Signals found by
@@ -197,6 +210,8 @@ class AuditResult:
         """
         if self.errors:
             return "ERROR"
+        if self.stats is None and self.differential is None and self.extended is None and self.linear is None:
+            return "NOT RUN"
 
         signals = []
 
@@ -403,11 +418,20 @@ def run_audit(
     if records:
         result.n_samples = len(records)
         result.output_bits = len(records[0]["hash"]) * 4
-    elif not hash_fn:
+        if len(records) < MIN_RECORDS:
+            result.errors.append(f"{len(records):,} record(s): the statistical suite needs at least "
+                                 f"{MIN_RECORDS:,} (the classifier {META_LEARNER_MIN_SAMPLES:,}); nothing was tested")
+            return result
+    elif not hash_fn or level == "quick":
         # Nothing to test. v0.3 fell through every phase and reported PASS
-        # for an empty record list (second cross-model review).
-        result.errors.append("no records and no hash function: nothing was tested")
+        # for an empty record list (second cross-model review); v0.3.1 still
+        # did so when a callable was supplied at the quick level (third pass).
+        result.errors.append("no records" + ("" if hash_fn else " and no hash function")
+                             + ": nothing was tested")
         return result
+    else:
+        result.notes.append("no records supplied: the statistical tier did not run; "
+                            "the verdict covers the chosen-input tiers only")
 
     # --- Phase 1: Statistical suite + meta-learner (always runs) ---
     if records:

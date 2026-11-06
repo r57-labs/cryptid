@@ -139,7 +139,7 @@ def build(out_path):
     # --- Title block ---
     story.append(P("Empirical Detection of Statistical and Differential Weaknesses in Hash Functions", TITLE))
     story.append(P("A black-box toolkit, its calibration, and what it cannot see", SUBTITLE))
-    story.append(P("John &amp; Claude | R57 Labs | Version 2.2, November 2026 (v2.1: November 2026; v2.0: October 2026; v1.0: April 2026)", BYLINE))
+    story.append(P("John &amp; Claude | R57 Labs | Version 2.3, November 2026 (v2.2, v2.1: November 2026; v2.0: October 2026; v1.0: April 2026)", BYLINE))
 
     story.append(P("<b>Abstract</b>", H2))
     story.append(P(
@@ -636,9 +636,10 @@ def build(out_path):
         "\"Every hand-rolled implementation is checked against published vectors\" was false for Pearson-64, which "
         "has none. \"Standard library only\" omitted matplotlib and ReportLab for the figures and this paper. The site's "
         "\"anything that returns a digest\" needed the tier-1-only qualifier for record files. All restated.",
-        "The six neural-probe research scripts from the project's earlier phases have methodological flaws (candidate "
-        "selection on the full dataset before a split; records reused across train and test; a loss that includes "
-        "prompt tokens). Nothing published rests on them; they are moved to experiments/legacy/ with those flaws listed.",
+        "Five of the six neural-probe research scripts from the project's earlier phases have methodological flaws "
+        "(candidate selection on the full dataset before a split; records reused across train and test; a loss that "
+        "includes prompt tokens); the sixth was examined in the second pass. Nothing published rests on them; they are "
+        "moved to experiments/legacy/ with the flaws listed.",
     ]:
         story.append(P(f"• {item}", SMALL))
     story.append(P(
@@ -650,9 +651,9 @@ def build(out_path):
         "agent with a different instruction. And code written in the course of a review is new code: it needs the same "
         "adversarial pass as the original, which is why the toolkit now carries regression tests for its verdict "
         "contract and runs them, with the published-vector self-checks and the positive controls, on every change. "
-        "The second review's findings, our verdict on each, and the transcript of the review (as recorded from the "
-        "product, edited only to omit a pasted README and normalize file paths; not an authenticated log) are in the "
-        "repository (docs/REVIEW-2.md)."))
+        "The second review's findings, our verdict on each, and the transcripts of all three of its passes (as recorded "
+        "from the product, edited only to omit a pasted README and normalize file paths; not an authenticated log; the "
+        "later prompts drafted by the model whose fixes were under review) are in the repository (docs/REVIEW-2.md)."))
 
     story.append(P("8.3 The second pass (version 2.1 → 2.2)", H2))
     story.append(P(
@@ -668,12 +669,33 @@ def build(out_path):
         "are corrected in this version. Following the reviewer's small-N probe to larger N also exposed a detection gap "
         "that no review had reported: the entropy test's fixed 7.5-bit threshold corresponds to about 181 equiprobable "
         "values, so a digest byte restricted to 192 of its 256 values passed the tier at every N and scored 0.35 with the "
-        "classifier at N = 5,000. The test now carries a coverage check on the values a byte never takes (exact binomial "
-        "occupancy tail) and a chi-square frequency test from N = 1,280; the 192-value byte is caught from N = 500 and "
-        "a 240-value byte from N = 1,500 (experiments/small_n_thresholds.py). Reviews sample rather than enumerate: two "
-        "of the three new fail-opens and the detection gap were present in version 2.0 and survived the first pass over "
-        "the same files. The reviewer's closing line stands for this version as well: it would not describe its review "
-        "as proving that no other issues remain."))
+        "classifier at N = 5,000. The test now carries a coverage check on the values a byte never takes (a binomial "
+        "approximation to the occupancy tail, conservative because the missing-value events are negatively correlated) "
+        "and a chi-square frequency test from N = 1,280; with a uniformly mapped defect the 192-value byte is caught from "
+        "N = 500, a 240-value byte from N = 1,500 and a byte missing two values from about N = 4,000 "
+        "(experiments/small_n_thresholds.py). Reviews sample rather than enumerate: two of the three verdict bugs above "
+        "(two fail-open, one false positive) and the detection gap were present in version 2.0 and survived the first "
+        "pass over the same files. The reviewer's closing line stands for this version as well: it would not describe "
+        "its review as proving that no other issues remain."))
+
+    story.append(P("8.4 The third pass (version 2.2 → 2.3)", H2))
+    story.append(P(
+        "Version 2.2 went back to the same reviewer at a higher effort setting, with the change list above as the claims "
+        "under test and an instruction to rank findings by consequence. It verified the fixes, re-ran both held-out "
+        "evaluations and the calibration script against their stored outputs, and found: a file that repeats one correct "
+        "input could make a correct function report WARN or FAIL, because the loader accepted repeated rows and the suite "
+        "treated them as independent samples (rows are now collapsed, and an input with two different digests is an "
+        "error); the record floor and the empty-run check were enforced by the command line but not by the engine, and "
+        "<i>compare</i>'s per-file result said PASS for a side on which nothing had run (both now in the engine; a result "
+        "in which no tier ran is NOT RUN); the experiment behind the power table in the previous paragraph had mapped the "
+        "defect with a modulus that gave some values twice the probability of others, which let the entropy threshold "
+        "fire early and overstated the coverage check at N = 300 (regenerated with a uniform mapping; the figures above "
+        "are the corrected ones); \"exact\" occupancy tail and \"six sigma, never\" overstated what was measured; the "
+        "chi-square branch had no positive control; and five statements in this section and the README about the "
+        "reviews themselves were wrong (\"four fail-opens\", \"three fail-opens\", \"held up under every review\", "
+        "\"six scripts\", and the file-mode description on the site). All are corrected in this version. The findings "
+        "have become smaller each round; that is the curve one hopes for and not a guarantee. The reviewer: \"I found "
+        "additional issues, so this pass does not establish that no others remain.\""))
 
     # --- 9 Conclusion ---
     story.append(P("9. Conclusion and future work", H1))
@@ -701,7 +723,7 @@ def build(out_path):
         canvas.saveState()
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(colors.HexColor("#666666"))
-        canvas.drawString(0.9 * inch, 0.5 * inch, "cryptid whitepaper v2.2 — R57 Labs — November 2026")
+        canvas.drawString(0.9 * inch, 0.5 * inch, "cryptid whitepaper v2.3 — R57 Labs — November 2026")
         canvas.drawRightString(letter[0] - 0.9 * inch, 0.5 * inch, f"{doc_.page}")
         canvas.restoreState()
 

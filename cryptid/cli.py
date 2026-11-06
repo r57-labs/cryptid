@@ -52,16 +52,12 @@ from input_handler import (
     make_hash_fn_from_command,
     detect_output_width,
 )
-from engine import run_audit, AuditResult
+from engine import run_audit, AuditResult, MIN_RECORDS
 from report import print_report, print_comparison_report, to_json, Colors
 
 
-# Fewer records than this and the statistical suite is noise: a 256-value
-# byte-frequency table cannot be read from 50 rows, and the one-record case
-# produced a false inter-record-distance signal in v0.3 (found in the second
-# cross-model review). The classifier needs 2,000; this is the floor for
-# running the tier at all.
-MIN_RECORDS = 100
+# The record floor lives in the engine (engine.MIN_RECORDS); the CLI checks
+# it early only to give a cleaner message before generating anything.
 
 
 def _positive_int(text: str) -> int:
@@ -165,6 +161,8 @@ def cmd_test(args):
             print(f"  Loaded {len(records):,} records ({detect_output_width(records)}-bit output)")
             if load_report.get("skipped"):
                 print(f"  Skipped {load_report['skipped']:,} unusable line(s) (--skip-malformed)")
+            if load_report.get("duplicates_removed"):
+                print(f"  Collapsed {load_report['duplicates_removed']:,} repeated row(s) to one each")
         _require_records(records, os.path.basename(args.input), verbose)
 
     elif args.algorithm:
@@ -212,6 +210,9 @@ def cmd_test(args):
     if load_report.get("skipped"):
         result.notes.append(f"{load_report['skipped']:,} unusable input line(s) were skipped at your request; "
                             f"the verdict covers the {load_report['records']:,} records that loaded")
+    if load_report.get("duplicates_removed"):
+        result.notes.append(f"{load_report['duplicates_removed']:,} repeated row(s) were collapsed: a repeated "
+                            f"input is the same sample twice, not evidence about the function")
 
     # Output
     if json_output:
@@ -260,12 +261,12 @@ def cmd_compare(args):
     try:
         if verbose:
             print(f"\n  Loading target: {args.target}")
-        records_a = load_input(args.target)
+        records_a = load_input(args.target, allow_conflicts=True)
         name_a = os.path.splitext(os.path.basename(args.target))[0]
 
         if verbose:
             print(f"  Loading reference: {args.reference}")
-        records_b = load_input(args.reference)
+        records_b = load_input(args.reference, allow_conflicts=True)
         name_b = os.path.splitext(os.path.basename(args.reference))[0]
     except (InputFormatError, OSError) as e:
         print(f"Error: {e}", file=sys.stderr)

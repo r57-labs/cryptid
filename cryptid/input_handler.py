@@ -339,7 +339,8 @@ class InputFormatError(ValueError):
     """Raised when an input file cannot be used as-is."""
 
 
-def validate_records(records: list[dict], source: str = "input") -> list[dict]:
+def validate_records(records: list[dict], source: str = "input", report: Optional[dict] = None,
+                     allow_conflicts: bool = False) -> list[dict]:
     """Normalize digests and reject files the analysis cannot interpret.
 
     Digests are lower-cased and any 0x prefix removed. Every digest must be
@@ -379,18 +380,44 @@ def validate_records(records: list[dict], source: str = "input") -> list[dict]:
             f"(e.g. format(value, '064x') for 256 bits) and re-run."
         )
 
-    return records
+    # Repeated inputs. The statistical suite treats records as independent
+    # samples of the function; the same input twice is the same sample
+    # twice, and a file of one repeated correct row scored P(weakened) = 1.0
+    # in v0.3.1 (third cross-model review pass). Identical rows are
+    # collapsed to one. An input that appears with two different digests is
+    # not a sample of a function at all: the implementation is not
+    # deterministic, or the file is corrupt, and the suite cannot run on it.
+    seen = {}
+    deduped = []
+    for rec in records:
+        prev = seen.get(rec["plaintext"])
+        if prev is None:
+            seen[rec["plaintext"]] = rec["hash"]
+            deduped.append(rec)
+        elif prev != rec["hash"]:
+            if allow_conflicts:          # compare reports these per input itself
+                deduped.append(rec)
+                continue
+            raise InputFormatError(
+                f"{source}: input {rec['plaintext'][:32]!r} appears with two different digests "
+                f"(…{prev[-8:]} and …{rec['hash'][-8:]}). The implementation is not a function of its "
+                f"input, or the file is corrupt; `cryptid compare` reports this per input."
+            )
+    if report is not None:
+        report["duplicates_removed"] = len(records) - len(deduped)
+    return deduped
 
 
 def load_input(filepath: str, format: Optional[str] = None,
-               skip_malformed: bool = False, report: Optional[dict] = None) -> list[dict]:
+               skip_malformed: bool = False, report: Optional[dict] = None,
+               allow_conflicts: bool = False) -> list[dict]:
     """Load input data from file, auto-detecting format if needed.
 
     Raises InputFormatError (a ValueError) if the file cannot be parsed, if
     any line is unusable (unless skip_malformed is True), or if its digests
     are inconsistent -- see validate_records. When `report` is a dict it
-    receives {"records": n, "skipped": n, "skipped_lines": [(lineno, why)]}
-    so the caller can show what was left out.
+    receives {"records": n, "skipped": n, "skipped_lines": [(lineno, why)],
+    "duplicates_removed": n} so the caller can show what was left out.
     """
     if format is None:
         format = detect_input_format(filepath)
@@ -430,4 +457,7 @@ def load_input(filepath: str, format: Optional[str] = None,
     if report is not None:
         report.update({"records": len(records), "skipped": len(skipped), "skipped_lines": skipped})
 
-    return validate_records(records, source=source)
+    records = validate_records(records, source=source, report=report, allow_conflicts=allow_conflicts)
+    if report is not None:
+        report["records"] = len(records)
+    return records

@@ -77,6 +77,25 @@ class VerdictLogicTests(unittest.TestCase):
         r.meta_learner = {"probability": 0.45, "threshold": 0.4}
         self.assertEqual(r.overridden_statistical_tests, [])     # not overridden: the classifier agreed
 
+    def test_override_label_is_rendered(self):
+        # The report must show the override, not only the engine property
+        # (a renderer regression would otherwise pass CI -- third review pass).
+        import io, contextlib
+        from report import print_statistical_results, Colors
+        Colors.disable()
+        r = self._result_with_stats(0.5, True)
+        r.meta_learner = {"probability": 0.12, "threshold": 0.4, "label": "clean"}
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            print_statistical_results(r)
+        text = buf.getvalue()
+        self.assertIn("SIGNAL", text)
+        self.assertIn("overridden by classifier", text)
+
+    def test_not_run_verdict_when_nothing_ran(self):
+        r = AuditResult("t")
+        self.assertEqual(r.verdict, "NOT RUN")
+
     def test_one_record_distance_has_no_signal(self):
         from statistical_analysis import record_distance_analysis
         r = record_distance_analysis(_records(_sha256, 1))
@@ -127,6 +146,29 @@ class EntropyThresholdTests(unittest.TestCase):
             lowest = min(-sum(c / n * math.log2(c / n) for c in Counter(rng.randbytes(n)).values())
                          for _ in range(400))
             self.assertGreater(lowest, byte_t, n)
+
+    def test_chi_square_catches_full_support_skew(self):
+        # Every value present, frequencies skewed: only the chi-square branch
+        # (N >= 1,280) sees it. The suite would pass without this test if the
+        # branch were removed (third review pass).
+        from statistical_analysis import CHI2_Z
+
+        def skewed(msg):
+            # values 0-127 with probability 0.7, 128-255 with 0.3; every
+            # value stays frequent (expected count ~7 at N = 3,000), so the
+            # coverage check stays quiet and the skew is the chi-square's.
+            h = bytearray(hashlib.sha256(msg.encode()).digest())
+            if h[1] < 102:
+                h[0] &= 0x7F
+            return bytes(h).hex()
+        for seed in range(3):
+            r = entropy_analysis(_records(skewed, 3000, seed=seed))
+            self.assertIsNotNone(r["max_chi2_z"])
+            self.assertGreater(r["max_chi2_z"], CHI2_Z, seed)
+            self.assertTrue(r["support_signal"])
+            self.assertGreaterEqual(r["min_support_p"], 1e-8, "coverage must not be what fires here")
+        r = entropy_analysis(_records(skewed, 1000, seed=0))
+        self.assertIsNone(r["max_chi2_z"])                 # below CHI2_MIN_RECORDS the branch is off
 
     def test_support_defect_is_caught_and_clean_is_not(self):
         # A digest byte restricted to 192 of 256 values has 7.58 bits of
